@@ -1,5 +1,7 @@
 from os.path import join
 import requests
+import pandas as pd
+import json
 
 
 def download_mindreader(save_to='./data/mindreader', only_completed=False):
@@ -23,5 +25,59 @@ def download_mindreader(save_to='./data/mindreader', only_completed=False):
         efp.write(entities_response.content)
 
 
+def preprocess_user_major(from_path='./data/mindreader', fp=None):
+    """
+    Stores ratings in a user-major fashion, e.g.:
+    {
+        user_1 = {
+            'movies' : [(movie_1, 1), (movie_2, -1), (movie_3, 0)],
+            'entities' : [(entity_1, 1), (entity_2, -1), (entity_3, 0)]
+        },
+
+        ...
+    }
+    :param from_path: Where to load ratings.csv and entities.csv from.
+    :param fp: If not none, makes a JSON dump of the ratings to this file pointer.
+    :return: The ratings map as a dictionary.
+    """
+    ratings_path = join(from_path, 'ratings.csv')
+    entities_path = join(from_path, 'entities.csv')
+
+    with open(ratings_path) as rfp:
+        ratings = pd.read_csv(rfp)
+    with open(entities_path) as efp:
+        entities = pd.read_csv(efp)
+
+    ratings = [(uid, uri, rating) for uid, uri, rating in ratings[['userId', 'uri', 'sentiment']].values]
+    entities = [(uri, name, labels) for uri, name, labels in entities[['uri', 'name', 'labels']].values]
+
+    # Filter out rating entities that aren't present in the entity set
+    e_uris = [uri for uri, name, labels in entities]
+    ratings = [(uid, uri, rating) for uid, uri, rating in ratings if uri in e_uris]
+
+    # Map URIs to labels
+    label_map = {}
+    for uri, name, labels in entities:
+        labels = labels.split('|')
+        if uri not in label_map:
+            label_map[uri] = labels
+
+    u_r_map = {}
+    for uid, uri, rating in ratings:
+        if uid not in u_r_map:
+            u_r_map[uid] = {'movies': [], 'entities': []}
+        if 'Movie' in label_map[uri]:
+            u_r_map[uid]['movies'].append((uri, rating))
+        else:
+            u_r_map[uid]['entities'].append((uri, rating))
+
+    if fp:
+        json.dump(u_r_map, fp, indent=True)
+
+    return u_r_map
+
+
 if __name__ == '__main__':
     download_mindreader(save_to='../data/mindreader', only_completed=True)
+    with open('../data/mindreader/user_ratings_map.json', 'w') as fp:
+        preprocess_user_major(from_path='../data/mindreader', fp=fp)
