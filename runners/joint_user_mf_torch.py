@@ -70,10 +70,16 @@ if __name__ == '__main__':
     optimizer = optimizers.SGD(model.parameters(), lr=lr)
     loss_fn = nn.MSELoss()
 
+    train = [
+        (u, m if is_movie else m + n_movies, rating, is_movie)
+        for u, m, rating, is_movie in train
+    ]
+
     train_history = []
     test_history = []
 
     for i in range(n_iter):
+        shuffle(train)
         for users, movies, ratings, is_movie in batches(train, n=64):
             model.train()
             predictions = model(users, movies, is_movie)

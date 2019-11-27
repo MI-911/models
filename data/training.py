@@ -169,8 +169,8 @@ def cold_start(from_path='../data/user_ratings_map.json', conversion_map=None, s
         split_index = int(len(m_ratings) * (split_ratio[0] / 100))
 
         shuffle(m_ratings)
-        training = m_ratings[split_index:]
-        test = m_ratings[:split_index]
+        training = m_ratings[:split_index]
+        test = m_ratings[split_index:]
 
         idx_u_r_map[u]['movies'] = training
         idx_u_r_map[u]['test'] = test
