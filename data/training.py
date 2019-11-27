@@ -44,7 +44,7 @@ def cold_start(from_path='../data/user_ratings_map.json', conversion_map=None, s
     }
     """
 
-    assert sum(split_ratio) == 1, f'Split ratios {split_ratio} does not add up to 1.'
+    assert sum(split_ratio) == 100 or sum(split_ratio) == 1, f'Split ratios {split_ratio} does not add up to 1 or 100.'
 
     u_idx_map, uc = {}, 0
     m_uri_map, mc = {}, 0
@@ -91,3 +91,17 @@ def cold_start(from_path='../data/user_ratings_map.json', conversion_map=None, s
         idx_u_r_map[u]['test'] = test
 
     return idx_u_r_map
+
+
+if __name__ == '__main__':
+    data = cold_start(
+        from_path='../data/mindreader/user_ratings_map.json',
+        conversion_map={
+            -1: 1,
+            0: None,
+            1: 5
+        },
+        split_ratio=[80, 20]
+    )
+
+    print(data)
