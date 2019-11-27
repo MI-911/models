@@ -2,6 +2,7 @@ from os.path import join
 import requests
 import pandas as pd
 import json
+import os
 
 
 def download_mindreader(save_to='./data/mindreader', only_completed=False):
@@ -15,6 +16,9 @@ def download_mindreader(save_to='./data/mindreader', only_completed=False):
 
     if only_completed:
         ratings_url += '?final=yes'
+
+    if not os.path.exists(save_to):
+        os.mkdir(save_to)
 
     ratings_response = requests.get(ratings_url)
     entities_response = requests.get(entities_url)
