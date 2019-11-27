@@ -17,15 +17,8 @@ def cold_start(from_path='../data/user_ratings_map.json', conversion_map=None, s
     """
     Converts UIDs and URIs to indices as returns the ratings
     in a user-major fashion (note different indices from movies
-    and entities.), e.g.:
-    {
-        0 : {
-            'movies' : [(0, 1), (1, 1), (2, -1)],
-            'entities' : [(0, 1), (1, -1), (2, 0)]
-        },
+    and entities.).
 
-        ...
-    }
     :param from_path: Where to load user-major ratings from.
     :param conversion_map: A dictionary to map rating values to different values, e.g.
            {
