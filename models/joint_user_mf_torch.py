@@ -14,12 +14,12 @@ class JointUserMF(nn.Module):
         # Embedding layers
         self.U = nn.Embedding(self.n_users, self.k)
         self.M = nn.Embedding(self.n_movies + self.n_entities, self.k)
-        # self.E = nn.Embedding(self.n_entities, self.k)
+        self.E = nn.Embedding(self.n_entities, self.k)
 
         # Biases
         self.Ub = nn.Embedding(self.n_users, 1)
         self.Mb = nn.Embedding(self.n_movies + self.n_entities, 1)
-        # self.Eb = nn.Embedding(self.n_entities, 1)
+        self.Eb = nn.Embedding(self.n_entities, 1)
 
     def forward(self, users, items, movie_map):
         # The movie map determines, for every user-item pair, whether the
@@ -27,11 +27,11 @@ class JointUserMF(nn.Module):
         # Choose the proper embeddings from this information.
 
         u_embeddings = self.U(users)
-        i_embeddings = self.M(items)
+        i_embeddings = self.choose_embeddings(items, movie_map)
 
         # Dot product all vectors pairwise, add bias and return
         predictions = (u_embeddings * i_embeddings).sum(dim=1, keepdim=True)
-        predictions += self.Ub(users) + self.Mb(items)
+        # predictions += self.Ub(users) + self.choose_biases(items, movie_map)
 
         return predictions.squeeze()
 
