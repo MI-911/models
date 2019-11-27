@@ -3,14 +3,14 @@ import pandas as pd
 from random import shuffle
 
 
-def _add_rating_w_user(lst, u, m, rating, conversion_map):
+def _add_rating_w_user(lst, u, m, rating, conversion_map, is_movie=False):
     if conversion_map:
         assert rating in conversion_map, f'Rating value {rating} not found in conversion map {conversion_map}'
         rating = conversion_map[rating]
         if not rating:
             return  # Don't add the rating if the value is None or False
         else:
-            lst.append((u, m, rating))
+            lst.append((u, m, rating, 1 if is_movie else 0))
 
 
 def _add_rating(lst, m, rating, conversion_map):
@@ -84,10 +84,10 @@ def warm_start(
     _m_ratings = []
     _e_ratings = []
     for uid, uri, rating in movie_ratings:
-        _add_rating_w_user(_m_ratings, u_uid_map[uid], m_uri_map[uri], rating, conversion_map)
+        _add_rating_w_user(_m_ratings, u_uid_map[uid], m_uri_map[uri], rating, conversion_map, is_movie=True)
 
-    for uid, uri, rating in movie_ratings:
-        _add_rating_w_user(_e_ratings, u_uid_map[uid], m_uri_map[uri], rating, conversion_map)
+    for uid, uri, rating in entity_ratings:
+        _add_rating_w_user(_e_ratings, u_uid_map[uid], e_uri_map[uri], rating, conversion_map, is_movie=False)
 
     movie_ratings = _m_ratings
     entity_ratings = _e_ratings
@@ -101,6 +101,9 @@ def warm_start(
 
     train = entity_ratings + train_movies
     test = test_movies
+
+    shuffle(train)
+    shuffle(test)
 
     return train, test, uc, mc, ec
 
