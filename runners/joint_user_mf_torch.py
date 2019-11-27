@@ -1,4 +1,4 @@
-from data.training import cold_start
+from data.training import warm_start
 from models.joint_user_mf_torch import JointUserMF
 import torch.optim as optimizers
 import torch.nn as nn
@@ -50,8 +50,9 @@ def unpack_user_ratings(u_r_map, n_movies):
 
 
 if __name__ == '__main__':
-    u_r_map, n_users, n_movies, n_entities = cold_start(
-        from_path='../data/mindreader/user_ratings_map.json',
+    train, test, n_users, n_movies, n_entities = warm_start(
+        ratings_path='../data/mindreader/ratings_clean.json',
+        entities_path='../data/mindreader/entities_clean.json',
         conversion_map={
             -1: 1,
             0: None,  # Ignore don't know ratings
@@ -68,8 +69,6 @@ if __name__ == '__main__':
     model = JointUserMF(n_users=n_users, n_movies=n_movies, n_entities=n_entities, k=k)
     optimizer = optimizers.SGD(model.parameters(), lr=lr)
     loss_fn = nn.MSELoss()
-
-    train, test = unpack_user_ratings(u_r_map, n_movies)
 
     train_history = []
     test_history = []
