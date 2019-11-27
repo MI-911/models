@@ -2,7 +2,7 @@ from os.path import join
 import requests
 import pandas as pd
 import json
-import os
+import os, io
 
 
 def download_mindreader(save_to='./data/mindreader', only_completed=False):
@@ -23,10 +23,25 @@ def download_mindreader(save_to='./data/mindreader', only_completed=False):
     ratings_response = requests.get(ratings_url)
     entities_response = requests.get(entities_url)
 
-    with open(join(save_to, 'ratings.csv'), 'wb') as rfp:
-        rfp.write(ratings_response.content)
-    with open(join(save_to, 'entities.csv'), 'wb') as efp:
-        efp.write(entities_response.content)
+    ratings = pd.read_csv(io.BytesIO(ratings_response.content))
+    entities = pd.read_csv(io.BytesIO(entities_response.content))
+
+    with open(join(save_to, 'ratings.csv'), 'w') as rfp:
+        pd.DataFrame.to_csv(ratings, rfp)
+    with open(join(save_to, 'entities.csv'), 'w') as efp:
+        pd.DataFrame.to_csv(entities, efp)
+
+    ratings = [(uid, uri, rating) for uid, uri, rating in ratings[['userId', 'uri', 'sentiment']].values]
+    entities = [(uri, name, labels) for uri, name, labels in entities[['uri', 'name', 'labels']].values]
+
+    # Filter out rating entities that aren't present in the entity set
+    e_uris = [uri for uri, name, labels in entities]
+    ratings = [(uid, uri, rating) for uid, uri, rating in ratings if uri in e_uris]
+
+    with open(join(save_to, 'ratings_clean.json'), 'w') as rfp:
+        json.dump(ratings, rfp)
+    with open(join(save_to, 'entities_clean.json'), 'w') as efp:
+        json.dump(entities, efp)
 
 
 def preprocess_user_major(from_path='./data/mindreader', fp=None):
@@ -44,20 +59,13 @@ def preprocess_user_major(from_path='./data/mindreader', fp=None):
     :param fp: If not none, makes a JSON dump of the ratings to this file pointer.
     :return: The ratings map as a dictionary.
     """
-    ratings_path = join(from_path, 'ratings.csv')
-    entities_path = join(from_path, 'entities.csv')
+    ratings_path = join(from_path, 'ratings_clean.json')
+    entities_path = join(from_path, 'entities_clean.json')
 
     with open(ratings_path) as rfp:
-        ratings = pd.read_csv(rfp)
+        ratings = json.load(rfp)
     with open(entities_path) as efp:
-        entities = pd.read_csv(efp)
-
-    ratings = [(uid, uri, rating) for uid, uri, rating in ratings[['userId', 'uri', 'sentiment']].values]
-    entities = [(uri, name, labels) for uri, name, labels in entities[['uri', 'name', 'labels']].values]
-
-    # Filter out rating entities that aren't present in the entity set
-    e_uris = [uri for uri, name, labels in entities]
-    ratings = [(uid, uri, rating) for uid, uri, rating in ratings if uri in e_uris]
+        entities = json.load(efp)
 
     # Map URIs to labels
     label_map = {}
