@@ -1,8 +1,6 @@
 import json
 import os
-from concurrent.futures.process import ProcessPoolExecutor
-from concurrent.futures.thread import ThreadPoolExecutor
-from itertools import combinations
+from itertools import combinations, product
 
 from networkx import shortest_path_length
 from numpy import mean
@@ -59,20 +57,36 @@ def analyse_mindreader(G):
     user_uris = []
 
     for user in u_r_map:
-        user_uris.append(list_to_pairs([index_movie_map[movie_id] for movie_id, rating in u_r_map[user]['movies']]))
+        liked = [index_movie_map[movie_id] for movie_id, rating in u_r_map[user]['movies'] if rating == 1]
+        disliked = [index_movie_map[movie_id] for movie_id, rating in u_r_map[user]['movies'] if rating == -1]
+
+        # uri_combinations = product(liked, disliked)
+        uri_combinations = combinations(liked, r=2)
+
+        user_uris.append(list(uri_combinations))
 
     analyse(G, 'mindreader_pairwise_distance.json', user_uris)
 
 
 def analyse_movielens(G):
-    user_uris = ratings.where(ratings.rating > 3.5).groupby('userId')['uri'].apply(list).reset_index(name='uris')['uris']
+    combinations_list = list()
+    user_ids = set(ratings['userId'])
 
-    analyse(G, 'movielens_pairwise_distance.json', user_uris)
+    for user_id in user_ids:
+        user_ratings = ratings[ratings.userId == user_id]
+
+        user_likes = list(user_ratings[user_ratings.liked]['uri'])
+        user_dislikes = list(user_ratings[~user_ratings.liked]['uri'])
+
+        # combinations_list.append(list_to_pairs(user_likes))
+        combinations_list.append(product(user_likes, user_dislikes))
+
+    analyse(G, 'movielens_pairwise_distance.json', combinations_list)
 
 
 if __name__ == '__main__':
-    graph = load_graph(graph_path='../data/graph/triples.csv', directed=False)
+    graph = load_graph(graph_path='../data/graph/triples.csv', directed=False, exclude_relations=['FROM_DECADE'])
 
-    analyse_mindreader(graph)
-    # analyse_movielens(graph)
+    # analyse_mindreader(graph)
+    analyse_movielens(graph)
 

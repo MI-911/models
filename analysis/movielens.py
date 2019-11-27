@@ -21,5 +21,9 @@ ratings.imdbId = ratings.imdbId.map(lambda imdb_id: f'tt{str(imdb_id).zfill(7)}'
 ratings = ratings.merge(mapping, on='imdbId')
 ratings.dropna(inplace=True)
 
+# Remove middle ratings
+ratings = ratings[(ratings['rating'] >= 4.5) | (ratings['rating'] <= 2.5)]
+ratings['liked'] = ratings.rating > 3
+
 del mapping, links
 gc.collect()
