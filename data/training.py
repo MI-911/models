@@ -27,14 +27,7 @@ def cold_start(from_path='../data/user_ratings_map.json', conversion_map=None, s
                 1 : 5
            }
     :param split_ratio: The ratio between the size of the training and test set of MOVIE ratings.
-    :return: Indexed user-major ratings, e.g.:
-    {
-        0 : {
-            'movies' : [ ... ],
-            'entities' : [ ... ],
-            'test' : [ ... ]  // Only movie ratings
-        }
-    }
+    :return: Indexed user-major ratings, n_users, n_movies, n_entities
     """
 
     assert sum(split_ratio) == 100 or sum(split_ratio) == 1, f'Split ratios {split_ratio} does not add up to 1 or 100.'
@@ -83,7 +76,7 @@ def cold_start(from_path='../data/user_ratings_map.json', conversion_map=None, s
         idx_u_r_map[u]['movies'] = training
         idx_u_r_map[u]['test'] = test
 
-    return idx_u_r_map
+    return idx_u_r_map, len(u_idx_map), len(m_uri_map), len(e_uri_map)
 
 
 if __name__ == '__main__':
