@@ -57,12 +57,16 @@ def cold_start(from_path='../data/user_ratings_map.json', conversion_map=None, s
         u = u_idx_map[u]
         if u not in idx_u_r_map:
             idx_u_r_map[u] = {'movies': [], 'entities': []}
+
+        # Add movie ratings
         for m, rating in ratings['movies']:
             m = m_uri_map[m]
             _add_rating(idx_u_r_map[u]['movies'], m, rating, conversion_map)
+
+        # Add entity ratings
         for e, rating in ratings['entities']:
             e = e_uri_map[e]
-            _add_rating(idx_u_r_map[u]['movies'], e, rating, conversion_map)
+            _add_rating(idx_u_r_map[u]['entities'], e, rating, conversion_map)
 
     # Split movie ratings into training and test sets
     for u, ratings in idx_u_r_map.items():
