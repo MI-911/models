@@ -5,20 +5,32 @@ import json
 import os, io
 
 
+def _ensure_directory_exists(path):
+    if not os.path.exists(path):
+        os.mkdir(path)
+
+
+def download_graph(save_to='./data/graph'):
+    _ensure_directory_exists(save_to)
+
+    content = requests.get('https://mindreader.tech/api/triples').content
+    with open(os.path.join(save_to, 'triples.csv'), 'wb') as f:
+        f.write(content)
+
+
 def download_mindreader(save_to='./data/mindreader', only_completed=False):
     """
     Downloads the mindreader dataset.
     :param save_to: Directory to save ratings.csv and entities.csv.
     :param only_completed: If True, only downloads ratings for users who reached the final screen.
     """
+    _ensure_directory_exists(save_to)
+
     ratings_url = 'https://mindreader.tech/api/ratings'
     entities_url = 'https://mindreader.tech/api/entities'
 
     if only_completed:
         ratings_url += '?final=yes'
-
-    if not os.path.exists(save_to):
-        os.mkdir(save_to)
 
     ratings_response = requests.get(ratings_url)
     entities_response = requests.get(entities_url)
