@@ -7,3 +7,5 @@ torch
 tqdm
 seaborn
 scipy
+keras
+tensorflow-gpu

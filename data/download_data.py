@@ -26,11 +26,11 @@ def download_mindreader(save_to='./data/mindreader', only_completed=False):
     """
     _ensure_directory_exists(save_to)
 
-    ratings_url = 'https://mindreader.tech/api/ratings'
+    ratings_url = 'https://mindreader.tech/api/ratings?versions=2019-11-22,2019-11-21,2019-11-21-v2,2019-11-20-v2'
     entities_url = 'https://mindreader.tech/api/entities'
 
     if only_completed:
-        ratings_url += '?final=yes'
+        ratings_url += '&final=yes'
 
     ratings_response = requests.get(ratings_url)
     entities_response = requests.get(entities_url)
