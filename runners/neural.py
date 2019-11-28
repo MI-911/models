@@ -77,7 +77,7 @@ def get_samples(ratings_path='../data/mindreader/user_ratings_map.json'):
 
 
 def get_model(entity_idx, user_idx):
-    embedding_size = 100
+    embedding_size = 25
 
     item = Input(name='item', shape=[1])
     user = Input(name='user', shape=[1])
@@ -125,7 +125,22 @@ def train():
     t_x, t_y, entity_idx, user_idx = get_samples()
 
     model = get_model(entity_idx, user_idx)
-    model.fit(t_x, t_y, batch_size=8, epochs=20, shuffle=True, verbose=True, validation_split=0.15)
+    model.fit(t_x, t_y, batch_size=8, epochs=5, shuffle=True, verbose=True, validation_split=0.15)
+
+    # Generate recommendations
+    for_user = user_idx['fake']
+
+    item_ids = np.arange(len(entity_idx))
+    user = np.array([for_user for _ in range(len(item_ids))])
+
+    predictions = np.array([prediction[0] for prediction in model.predict([item_ids, user])]).argsort()[::-1][:10]
+
+    idx_entity = {value: key for key, value in entity_idx.items()}
+
+    for prediction in predictions:
+        print(idx_entity[prediction])
+
+    print(predictions)
 
 
 if __name__ == '__main__':
