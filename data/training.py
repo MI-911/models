@@ -99,7 +99,11 @@ def warm_start(
     train_movies = movie_ratings[:m_split_idx]
     test_movies = movie_ratings[m_split_idx:]
 
-    train = entity_ratings + train_movies
+    length = len(train_movies)
+
+    length = length // 2
+    # entity_ratings = []
+    train = entity_ratings[:length] + train_movies[:length]
     test = test_movies
 
     shuffle(train)
