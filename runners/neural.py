@@ -3,7 +3,7 @@ from random import shuffle, sample, choice
 
 import numpy as np
 from keras import regularizers, Input, Model
-from keras.layers import Embedding, Dot, Reshape, Dense
+from keras.layers import Embedding, Dot, Reshape, Dense, Concatenate, Dropout, merge, Flatten, Multiply
 from tensorflow import keras
 
 
@@ -77,24 +77,42 @@ def get_samples(ratings_path='../data/mindreader/user_ratings_map.json'):
 
 
 def get_model(entity_idx, user_idx):
-    embedding_size = 25
+    embedding_size = 100
+    layers = [64, 32, 16, 8]
 
     item = Input(name='item', shape=[1])
     user = Input(name='user', shape=[1])
 
-    item_embedding = Embedding(name='item_embedding',
-                               input_dim=len(entity_idx),
-                               output_dim=embedding_size)(item)
+    mf_item_embedding = Embedding(input_dim=len(entity_idx),
+                                  output_dim=embedding_size)
 
-    user_embedding = Embedding(name='user_embedding',
-                               input_dim=len(user_idx),
-                               output_dim=embedding_size)(user)
+    mf_user_embedding = Embedding(input_dim=len(user_idx),
+                                  output_dim=embedding_size)
 
-    merged = Dot(name='dot_product', normalize=True, axes=2)([item_embedding, user_embedding])
+    nn_item_embedding = Embedding(input_dim=len(entity_idx),
+                                  output_dim=embedding_size)
 
-    merged = Reshape(target_shape=[1])(merged)
+    nn_user_embedding = Embedding(input_dim=len(user_idx),
+                                  output_dim=embedding_size)
 
-    out = Dense(1, activation='sigmoid')(merged)
+    # MF part
+    mf_user_latent = Flatten()(mf_user_embedding(user))
+    mf_item_latent = Flatten()(mf_item_embedding(item))
+    mf_vector = Multiply()([mf_user_latent, mf_item_latent])
+
+    # MLP part
+    mlp_user_latent = Flatten()(nn_user_embedding(user))
+    mlp_item_latent = Flatten()(nn_item_embedding(item))
+    mlp_vector = Concatenate()([mlp_user_latent, mlp_item_latent])
+    for idx in range(len(layers)):
+        layer = Dense(layers[idx], activation='relu', name="layer%d" % idx)
+        mlp_vector = layer(mlp_vector)
+
+    concatenated = Concatenate()([mlp_vector, mf_vector])
+    dropout = Dropout(0.5)(concatenated)
+
+    out = Dense(1, activation='sigmoid')(dropout)
+
     model = Model(inputs=[item, user], outputs=out)
 
     model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
