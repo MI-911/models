@@ -43,26 +43,30 @@ def get_samples(ratings_path='../data/mindreader/user_ratings_map.json'):
 
     # Go through all users
     for user, ratings in user_ratings.items():
-        liked_movies = [movie for movie, rating in ratings['movies'] if rating == 1]
+        rated_movies = [(movie, rating) for movie, rating in ratings['movies'] if rating]
+        if not rated_movies:
+            return
 
+        # Randomly select half for prediction
+        shuffle(rated_movies)
+        # rated_movies = rated_movies[len(rated_movies) // 2:]
 
         # For each liked movie, create a training sample which tries to learn that movie
-        for liked_movie in liked_movies:
-            # Vector of the predicted movies
-            y = np.zeros((len(movie_idx),))
-            y[movie_idx[liked_movie]] = 1
+        y = np.zeros((len(movie_idx),))
+        for liked_movie, rating in rated_movies:
+            y[movie_idx[liked_movie]] = rating
 
-            # Consider all other liked or disliked entities as input
-            x = np.zeros((len(entity_idx),))
-            for item, rating in ratings['movies'] + ratings['entities']:
-                # Skip unknown and the item we are predicting
-                if rating == 0 or item == liked_movie:
-                    continue
+        # Consider all other liked or disliked entities as input
+        x = np.zeros((len(entity_idx),))
+        for item, rating in ratings['movies'] + ratings['entities']:
+            # Skip unknown and the item we are predicting
+            if not rating or item in rated_movies:
+                continue
 
-                x[entity_idx[item]] = rating
+            x[entity_idx[item]] = rating
 
-            train_x.append(x)
-            train_y.append(y)
+        train_x.append(x)
+        train_y.append(y)
 
     return np.array(train_x), np.array(train_y), entity_idx, movie_idx
 
@@ -74,16 +78,15 @@ def train():
     t_x, t_y, entity_idx, movie_idx = get_samples()
 
     model = Sequential()
-    model.add(Dense(128, input_dim=t_x.shape[1]))
+    model.add(Dense(256, input_dim=t_x.shape[1]))
+    model.add(Dense(512))
     model.add(Dropout(0.15))
-    model.add(Dense(256))
-    model.add(Dense(256))
-    model.add(Dense(t_y.shape[1], activation='softmax'))
+    model.add(Dense(t_y.shape[1], activation='tanh'))
 
-    model.compile(optimizer='adam', loss='categorical_crossentropy')
+    model.compile(optimizer='adam', loss='mean_squared_error')
 
     class Metrics(keras.callbacks.Callback):
-        def on_epoch_end(self, batch, logs={}):
+        def on_epoch_end(self, batch, logs=None):
             X_val, y_val = self.validation_data[0], self.validation_data[1]
             y_predict = np.asarray(model.predict(X_val))
 
@@ -97,11 +100,13 @@ def train():
 
             print(f'Hitrate: {(hits / len(y_val)) * 100}%')
 
-    model.fit(t_x, t_y, epochs=50, batch_size=8, verbose=False, validation_split=0.25, callbacks=[Metrics()])
+    model.fit(t_x, t_y, epochs=200, batch_size=16, verbose=False, validation_split=0.1, callbacks=[Metrics()])
 
     # Predict with Tom Hanks
     test_x = np.zeros((len(entity_idx),))
-    test_x[entity_idx['http://www.wikidata.org/entity/Q2143665']] = 1
+    test_x[entity_idx['http://www.wikidata.org/entity/Q3772']] = 1
+    test_x[entity_idx['http://www.wikidata.org/entity/Q1535153']] = -1
+    test_x[entity_idx['http://www.wikidata.org/entity/Q52162262']] = -1
 
     pred = model.predict(np.array([test_x])).argsort()[0][::-1][:10]
     #return pred
