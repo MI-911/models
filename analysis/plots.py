@@ -6,6 +6,7 @@ from scipy import stats
 from json import load
 
 if __name__ ==  '__main__':
-    plt.hist(load(open('./results/movielens_pairwise_distance_liked.json', 'r'))['mean_path_lengths'])
+    sns.kdeplot(load(open('./results/mindreader_pairwise_distance_liked.json', 'r'))['mean_path_lengths'])
+    plt.title('Pairwise like-like path length (mean per user)')
     plt.show()
 
