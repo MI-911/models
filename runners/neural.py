@@ -2,21 +2,29 @@ import json
 from random import shuffle, sample, choice
 
 import numpy as np
-from keras import regularizers
+from keras import regularizers, Input, Model
+from keras.layers import Embedding, Dot, Reshape, Dense
 from tensorflow import keras
 
 
 def load_data(ratings_path='../data/mindreader/user_ratings_map.json'):
     entity_count = 0
     movie_count = 0
+    user_count = 0
+
     entity_idx = dict()
     movie_idx = dict()
+    user_idx = dict()
 
     user_ratings = json.load(open(ratings_path, 'r'))
 
     # Map movies and entities
     # Skip unknown entities
     for user, ratings in user_ratings.items():
+        # Map user
+        user_idx[user] = user_count
+        user_count += 1
+
         # Map movies
         for movie in [movie for movie, rating in ratings['movies'] if rating]:
             if movie not in movie_idx:
@@ -33,7 +41,7 @@ def load_data(ratings_path='../data/mindreader/user_ratings_map.json'):
                 entity_idx[entity] = entity_count
                 entity_count += 1
 
-    return user_ratings, entity_idx, movie_idx
+    return user_ratings, entity_idx, movie_idx, user_idx
 
 
 def ratings_to_input(entity_idx, ratings, exclude=None):
@@ -50,38 +58,48 @@ def ratings_to_input(entity_idx, ratings, exclude=None):
 
 
 def get_samples(ratings_path='../data/mindreader/user_ratings_map.json'):
-    user_ratings, entity_idx, movie_idx = load_data(ratings_path)
+    ratings, entity_idx, movie_idx, user_idx = load_data(ratings_path)
 
-    all_user_ratings = list(user_ratings.items())
-    shuffle(all_user_ratings)
-
-    split_index = int(len(all_user_ratings) * 0.85)
-
-    train_user_ratings = all_user_ratings[:split_index]
-    test_user_ratings = all_user_ratings[split_index:]
-
-    train_x, train_y = [list() for _ in range(2)]
+    user_ids = []
+    item_ids = []
+    y = []
 
     # Go through all users
-    for user, ratings in train_user_ratings:
-        liked_movies = [(movie, rating) for movie, rating in ratings['movies'] if rating]
-        if not liked_movies:
-            continue
+    for user, ratings in ratings.items():
+        rated = [(entity_idx[entity], rating) for entity, rating in ratings['movies'] + ratings['entities'] if rating]
 
-        # Randomly select half for prediction
-        shuffle(liked_movies)
-        # rated_movies = rated_movies[len(rated_movies) // 2:]
+        for entity, rating in rated:
+            user_ids.append(user_idx[user])
+            item_ids.append(entity)
+            y.append(1 if rating == 1 else 0)
 
-        # For each liked movie, create a training sample which tries to learn that movie
-        y = np.zeros((len(movie_idx),))
-        for liked_movie, rating in liked_movies:
-            y[movie_idx[liked_movie]] = rating
+    return [item_ids, user_ids], y, entity_idx, user_idx
 
-        # Consider all other liked or disliked entities as input
-        train_x.append(ratings_to_input(entity_idx, ratings, exclude=[movie for movie, _ in liked_movies]))
-        train_y.append(y)
 
-    return np.array(train_x), np.array(train_y), entity_idx, movie_idx, test_user_ratings
+def get_model(entity_idx, user_idx):
+    embedding_size = 100
+
+    item = Input(name='item', shape=[1])
+    user = Input(name='user', shape=[1])
+
+    item_embedding = Embedding(name='item_embedding',
+                               input_dim=len(entity_idx),
+                               output_dim=embedding_size)(item)
+
+    user_embedding = Embedding(name='user_embedding',
+                               input_dim=len(user_idx),
+                               output_dim=embedding_size)(user)
+
+    merged = Dot(name='dot_product', normalize=True, axes=2)([item_embedding, user_embedding])
+
+    merged = Reshape(target_shape=[1])(merged)
+
+    out = Dense(1, activation='sigmoid')(merged)
+    model = Model(inputs=[item, user], outputs=out)
+
+    model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+
+    return model
 
 
 def test(model, test_user_ratings, entity_idx, movie_idx, k=5):
@@ -104,49 +122,10 @@ def test(model, test_user_ratings, entity_idx, movie_idx, k=5):
 
 
 def train():
-    from keras.models import Sequential
-    from keras.layers import Dense, Dropout
+    t_x, t_y, entity_idx, user_idx = get_samples()
 
-    t_x, t_y, entity_idx, movie_idx, test_user_ratings = get_samples()
-
-    model = Sequential()
-    model.add(Dense(4096, input_dim=t_x.shape[1]))
-    model.add(Dense(2048, activation='sigmoid'))
-    model.add(Dense(512))
-    model.add(Dense(t_y.shape[1], activation='tanh'))
-
-    model.compile(optimizer='adam', loss='mean_squared_error')
-
-    class Metrics(keras.callbacks.Callback):
-        def on_epoch_end(self, batch, logs=None):
-            X_val, y_val = self.validation_data[0], self.validation_data[1]
-            y_predict = np.asarray(model.predict(X_val))
-
-            hits = 0
-            for i in range(len(y_val)):
-                top_k = y_predict[i].argsort()[::-1][:5]
-                true_index = y_val[i].argmax()
-
-                if true_index in top_k:
-                    hits += 1
-
-            print(f'Hitrate: {(hits / len(y_val)) * 100}%')
-
-    model.fit(t_x, t_y, epochs=500, batch_size=8, verbose=True, validation_split=0.15, callbacks=[Metrics()])
-
-    # Synthetic user
-    test_x = np.zeros((len(entity_idx),))
-    test_x[entity_idx['http://www.wikidata.org/entity/Q3772']] = 1
-
-    pred = model.predict(np.array([test_x])).argsort()[0][::-1][:10]
-
-    idx_movie = {value: key for key, value in movie_idx.items()}
-
-    for arg in pred:
-        print(idx_movie[arg])
-
-    # Test
-    test(model, test_user_ratings, entity_idx, movie_idx)
+    model = get_model(entity_idx, user_idx)
+    model.fit(t_x, t_y, batch_size=8, epochs=20, shuffle=True, verbose=True, validation_split=0.15)
 
 
 if __name__ == '__main__':
