@@ -8,4 +8,4 @@ tqdm
 seaborn
 scipy
 keras
-tensorflow-gpu
+tensorflow

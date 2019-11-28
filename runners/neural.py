@@ -1,7 +1,9 @@
 import json
+from random import shuffle
+
 import numpy as np
-import keras
-from keras import Input
+from keras import regularizers
+from tensorflow import keras
 
 
 def load_data(ratings_path='../data/mindreader/user_ratings_map.json'):
@@ -43,9 +45,10 @@ def get_samples(ratings_path='../data/mindreader/user_ratings_map.json'):
     for user, ratings in user_ratings.items():
         liked_movies = [movie for movie, rating in ratings['movies'] if rating == 1]
 
+
         # For each liked movie, create a training sample which tries to learn that movie
         for liked_movie in liked_movies:
-            # One hot vector of the predicted movie
+            # Vector of the predicted movies
             y = np.zeros((len(movie_idx),))
             y[movie_idx[liked_movie]] = 1
 
@@ -66,25 +69,39 @@ def get_samples(ratings_path='../data/mindreader/user_ratings_map.json'):
 
 def train():
     from keras.models import Sequential
-    from keras.layers import Dense, Activation, Dropout
+    from keras.layers import Dense, Dropout
 
     t_x, t_y, entity_idx, movie_idx = get_samples()
 
-    print(t_x.shape[1])
-
     model = Sequential()
     model.add(Dense(128, input_dim=t_x.shape[1]))
-    model.add(Dropout(rate=.25))
-    model.add(Dense(256, activation='sigmoid'))
-    model.add(Dense(256, activation='sigmoid'))
-    model.add(Dense(t_y.shape[1], activation='sigmoid'))
+    model.add(Dropout(0.15))
+    model.add(Dense(256))
+    model.add(Dense(256))
+    model.add(Dense(t_y.shape[1], activation='softmax'))
 
-    model.compile(optimizer='adam', loss='categorical_crossentropy',)
-    model.fit(t_x, t_y, epochs=50, batch_size=16, verbose=False, validation_split=0.25)
+    model.compile(optimizer='adam', loss='categorical_crossentropy')
+
+    class Metrics(keras.callbacks.Callback):
+        def on_epoch_end(self, batch, logs={}):
+            X_val, y_val = self.validation_data[0], self.validation_data[1]
+            y_predict = np.asarray(model.predict(X_val))
+
+            hits = 0
+            for i in range(len(y_val)):
+                top_k = y_predict[i].argsort()[::-1][:10]
+                true_index = y_val[i].argmax()
+
+                if true_index in top_k:
+                    hits += 1
+
+            print(f'Hitrate: {(hits / len(y_val)) * 100}%')
+
+    model.fit(t_x, t_y, epochs=50, batch_size=8, verbose=False, validation_split=0.25, callbacks=[Metrics()])
 
     # Predict with Tom Hanks
     test_x = np.zeros((len(entity_idx),))
-    test_x[entity_idx['http://www.wikidata.org/entity/Q842256']] = 1
+    test_x[entity_idx['http://www.wikidata.org/entity/Q2143665']] = 1
 
     pred = model.predict(np.array([test_x])).argsort()[0][::-1][:10]
     #return pred
@@ -97,4 +114,3 @@ def train():
 
 if __name__ == '__main__':
     pred = train()
-
