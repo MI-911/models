@@ -8,7 +8,7 @@ class NeuralNetworkAll(nn.Module):
         super(NeuralNetworkAll, self).__init__()
         self.input = nn.Linear(n_movies + n_entities, n_fc1)
         self.fc1 = nn.Linear(n_fc1, n_fc2)
-        self.fc2 = nn.Linear(n_fc2, n_movies)
+        self.fc2 = nn.Linear(n_fc2, n_movies + n_entities)
 
     def forward(self, one_hot):
         x = ff.sigmoid(self.input(one_hot))

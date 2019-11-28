@@ -29,7 +29,7 @@ if __name__ == '__main__':
     model = JointUserMF(n_users, n_movies, n_entities, k=25, lr=0.0001, reg=0.15)
 
     # Filter out non-movies?
-    # train = [(u, m, r, i) for u, m, r, i in train if i]
+    train = [(u, m, r, i) for u, m, r, i in train if i]
 
     n_iter = 100
     eval_every = 10

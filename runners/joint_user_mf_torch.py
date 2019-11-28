@@ -5,6 +5,8 @@ import torch.nn as nn
 import torch as tt
 from random import shuffle
 from matplotlib import pyplot as plt
+import matplotlib.animation as animation
+import numpy as np
 
 
 def to_tensors(users, movies, ratings, is_movies):
@@ -54,9 +56,9 @@ if __name__ == '__main__':
         ratings_path='../data/mindreader/ratings_clean.json',
         entities_path='../data/mindreader/entities_clean.json',
         conversion_map={
-            -1: 1,
+            -1: -10,
             0: None,  # Ignore don't know ratings
-            1: 5
+            1: 10
         },
         split_ratio=[75, 25]
     )
@@ -108,6 +110,11 @@ if __name__ == '__main__':
                 print(f'Iteration {i}:')
                 print(f'    Train RMSE: {train_loss}')
                 print(f'    Test  RMSE: {test_loss}')
+                print(f'    Mean prediction:   {tt.mean(train_predictions)}')
+                print(f'    Min prediction:    {tt.min(train_predictions)}')
+                print(f'    Max prediction:    {tt.max(train_predictions)}')
+                print(f'    Median prediction: {tt.std(train_predictions)}')
+
 
     plt.plot(train_history, color='orange', label='Train RMSE')
     plt.plot(test_history, color='skyblue', label='Test RMSE')

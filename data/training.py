@@ -7,7 +7,7 @@ def _add_rating_w_user(lst, u, m, rating, conversion_map, is_movie=False):
     if conversion_map:
         assert rating in conversion_map, f'Rating value {rating} not found in conversion map {conversion_map}'
         rating = conversion_map[rating]
-        if not rating:
+        if rating is None:
             return  # Don't add the rating if the value is None or False
         else:
             lst.append((u, m, rating, 1 if is_movie else 0))
@@ -175,7 +175,7 @@ def cold_start(from_path='../data/user_ratings_map.json', conversion_map=None, s
         idx_u_r_map[u]['movies'] = training
         idx_u_r_map[u]['test'] = test
 
-    return idx_u_r_map, len(u_idx_map), len(m_uri_map), len(e_uri_map)
+    return idx_u_r_map, uc, mc, ec
 
 
 if __name__ == '__main__':
