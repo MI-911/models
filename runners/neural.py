@@ -100,13 +100,11 @@ def train():
 
             print(f'Hitrate: {(hits / len(y_val)) * 100}%')
 
-    model.fit(t_x, t_y, epochs=200, batch_size=16, verbose=False, validation_split=0.1, callbacks=[Metrics()])
+    model.fit(t_x, t_y, epochs=200, batch_size=32, verbose=False, validation_split=0.1, callbacks=[Metrics()])
 
     # Predict with Tom Hanks
     test_x = np.zeros((len(entity_idx),))
-    test_x[entity_idx['http://www.wikidata.org/entity/Q3772']] = 1
-    test_x[entity_idx['http://www.wikidata.org/entity/Q1535153']] = -1
-    test_x[entity_idx['http://www.wikidata.org/entity/Q52162262']] = -1
+    test_x[entity_idx['http://www.wikidata.org/entity/Q842256']] = 1
 
     pred = model.predict(np.array([test_x])).argsort()[0][::-1][:10]
     #return pred
