@@ -7,7 +7,7 @@ def _add_rating_w_user(lst, u, m, rating, conversion_map, is_movie=False):
     if conversion_map:
         assert rating in conversion_map, f'Rating value {rating} not found in conversion map {conversion_map}'
         rating = conversion_map[rating]
-        if not rating:
+        if rating is None:
             return  # Don't add the rating if the value is None or False
         else:
             lst.append((u, m, rating, 1 if is_movie else 0))
@@ -101,8 +101,8 @@ def warm_start(
 
     length = len(train_movies)
 
-    length = length // 2
-    # entity_ratings = []
+    # length = length // 2
+    entity_ratings = []
     train = entity_ratings[:length] + train_movies[:length]
     test = test_movies
 

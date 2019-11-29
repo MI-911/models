@@ -21,7 +21,9 @@ class MFExtended(nn.Module):
         self.ub = nn.Embedding(user_count, 1, sparse=True)
         self.ib = nn.Embedding(item_count, 1, sparse=True)
 
+        self.activation = nn.Sigmoid()
+
     def forward(self, user_id, item_id):
         pred = self.ub(user_id) + self.ib(item_id)
         pred += (self.users(user_id) * self.items(item_id)).sum(1, keepdim=True)
-        return pred.squeeze()
+        return self.activation(pred.squeeze())
