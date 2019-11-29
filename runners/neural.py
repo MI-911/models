@@ -64,16 +64,23 @@ def get_samples(ratings_path='../data/mindreader/user_ratings_map.json'):
     item_ids = []
     y = []
 
+    test_movies = dict()
+
     # Go through all users
     for user, ratings in ratings.items():
         rated = [(entity_idx[entity], rating) for entity, rating in ratings['movies'] + ratings['entities'] if rating]
+        test_movies[user] = choice([entity for entity, rating in ratings['movies'] if rating == 1])
 
         for entity, rating in rated:
+            # Exclude the sample used for hit rate computation
+            if entity == test_movies[user]:
+                continue
+
             user_ids.append(user_idx[user])
             item_ids.append(entity)
             y.append(1 if rating == 1 else 0)
 
-    return [item_ids, user_ids], y, entity_idx, user_idx
+    return [item_ids, user_ids], y, entity_idx, user_idx, movie_idx, test_movies
 
 
 def get_model(entity_idx, user_idx):
@@ -139,27 +146,46 @@ def test(model, test_user_ratings, entity_idx, movie_idx, k=5):
     print(f'Final hitrate: {(hits / len(test_user_ratings)) * 100}%')
 
 
-def train():
-    t_x, t_y, entity_idx, user_idx = get_samples()
-
-    model = get_model(entity_idx, user_idx)
-    model.fit(t_x, t_y, batch_size=8, epochs=5, shuffle=True, verbose=True, validation_split=0.15)
-
-    # Generate recommendations
-    for_user = user_idx['fake']
+def predict(model, user_idx, entity_idx, user_id):
+    for_user = user_idx[user_id]
+    idx_entity = {value: key for key, value in entity_idx.items()}
 
     item_ids = np.arange(len(entity_idx))
     user = np.array([for_user for _ in range(len(item_ids))])
 
     predictions = np.array([prediction[0] for prediction in model.predict([item_ids, user])]).argsort()[::-1][:10]
 
-    idx_entity = {value: key for key, value in entity_idx.items()}
-
     for prediction in predictions:
         print(idx_entity[prediction])
 
-    print(predictions)
+
+def train():
+    t_x, t_y, entity_idx, user_idx, item_idx, test_movies = get_samples()
+
+    model = get_model(entity_idx, user_idx)
+    model.fit(t_x, t_y, batch_size=32, epochs=1, shuffle=True, verbose=True, validation_split=0.15)
+
+    # Generate recommendations
+    predict(model, user_idx, entity_idx, 'a1b31b50-0d3c-11ea-84da-cba64abc6980')
+
+    # Calculate hit-rate
+    hits = 0
+    idx_entity = {value: key for key, value in entity_idx.items()}
+    for user, movie in test_movies.items():
+        user_ids = np.array([user_idx[user] for _ in range(len(entity_idx))])
+        item_ids = np.arange(len(entity_idx))
+
+        sorted_predictions = np.array([prediction[0] for prediction in model.predict([item_ids, user_ids])]).argsort()[::-1]
+        top_movies = [item_idx[idx_entity[idf]] for idf in sorted_predictions if idx_entity[idf] in item_idx][:10]
+
+        if entity_idx[movie] in top_movies:
+            print('hit')
+            hits += 1
+        else:
+            print('no hit :(')
+
+    print(f'{hits / len(user_ids) * 100}% hit-rate')
 
 
 if __name__ == '__main__':
-    pred = train()
+    train()
