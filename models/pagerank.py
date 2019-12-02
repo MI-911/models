@@ -3,6 +3,7 @@ from random import sample, choice
 from networkx import pagerank_scipy, Graph
 
 from data.training import cold_start
+import numpy as np
 
 
 def filter_map(u_r_map, condition):
@@ -44,6 +45,15 @@ def remove_nodes(G, keep):
     for n in all_nodes:
         if n not in keep:
             G.remove_node(n)
+
+
+def precision_at_k(ground_truth, prediction, r, k):
+    prediction = np.asarray([1 if item in ground_truth[:k] else 0 for item in prediction[:k]])
+
+    r = np.asarray(r)[:k] != 0
+    if r.size != k:
+        raise ValueError('Relevance score length < k')
+    return np.mean(r)
 
 
 def average_precision(ground_truth, predicted, k=5):
@@ -96,6 +106,7 @@ def run():
             0: None,  # Ignore don't know ratings
             1: 1
         },
+        restrict_entities=['Category'],
         split_ratio=[75, 25]
     )
 

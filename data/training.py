@@ -112,7 +112,8 @@ def warm_start(
     return train, test, uc, mc, ec
 
 
-def cold_start(from_path='../data/user_ratings_map.json', conversion_map=None, split_ratio=[75, 25]):
+def cold_start(from_path='../data/user_ratings_map.json', entities_path='../data/mindreader/entities_clean.json',
+               conversion_map=None, restrict_entities=None, split_ratio=[75, 25]):
     """
     Converts UIDs and URIs to indices as returns the ratings
     in a user-major fashion (note different indices from movies
@@ -138,6 +139,15 @@ def cold_start(from_path='../data/user_ratings_map.json', conversion_map=None, s
     with open(from_path) as fp:
         u_r_map = json.load(fp)
 
+    with open(entities_path) as fp:
+        entities = json.load(fp)
+
+    # Map URIs to labels
+    label_map = {}
+    for uri, name, labels in entities:
+        if uri not in label_map:
+            label_map[uri] = set(labels.split('|'))
+
     idx_u_r_map = {}
 
     for u, ratings in u_r_map.items():
@@ -148,7 +158,12 @@ def cold_start(from_path='../data/user_ratings_map.json', conversion_map=None, s
             if m not in m_uri_map:
                 m_uri_map[m] = mc
                 mc += 1
+
         for e, rating in ratings['entities']:
+            # Skip if restricting types and this entity's types are not included
+            if restrict_entities and not label_map[e].intersection(restrict_entities):
+                continue
+
             if e not in e_uri_map:
                 e_uri_map[e] = ec
                 ec += 1
@@ -164,6 +179,10 @@ def cold_start(from_path='../data/user_ratings_map.json', conversion_map=None, s
 
         # Add entity ratings
         for e, rating in ratings['entities']:
+            # If the entity is not in the entity URI map, then it was excluded
+            if e not in e_uri_map:
+                continue
+
             e = e_uri_map[e]
             _add_rating(idx_u_r_map[u]['entities'], e, rating, conversion_map)
 
@@ -183,14 +202,15 @@ def cold_start(from_path='../data/user_ratings_map.json', conversion_map=None, s
 
 
 if __name__ == '__main__':
-    data = warm_start(
-        ratings_path='../data/mindreader/ratings_clean.json',
+    data = cold_start(
+        from_path='../data/mindreader/user_ratings_map.json',
         entities_path='../data/mindreader/entities_clean.json',
         conversion_map={
             -1: 1,
             0: None,
             1: 5
         },
+        restrict_entities=['Subject'],
         split_ratio=[80, 20]
     )
 
