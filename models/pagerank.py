@@ -2,6 +2,7 @@ from random import sample, choice
 
 from networkx import pagerank_scipy, Graph
 
+from data.graph_loader import load_graph
 from data.training import cold_start
 import numpy as np
 
@@ -14,7 +15,7 @@ def filter_min_k(u_r_map, k):
     return filter_map(u_r_map, condition=lambda x: len(x['movies']) >= k and len(x['entities']) >= k)
 
 
-def personalized_pagerank(G, movies=None, entities=None, alpha=0.8):
+def personalized_pagerank(G, movies=None, entities=None, alpha=0.85):
     if not movies:
         return []
 
@@ -47,41 +48,32 @@ def remove_nodes(G, keep):
             G.remove_node(n)
 
 
-def precision_at_k(ground_truth, prediction, r, k):
-    prediction = np.asarray([1 if item in ground_truth[:k] else 0 for item in prediction[:k]])
-
+def precision_at_k(r, k):
     r = np.asarray(r)[:k] != 0
     if r.size != k:
         raise ValueError('Relevance score length < k')
     return np.mean(r)
 
 
-def average_precision(ground_truth, predicted, k=5):
-    p_sum = 0
-
-    unseen = list(ground_truth)
-    seen = list()
-
-    for i in range(0, k):
-        at_i = predicted[i]
-
-        if at_i in unseen:
-            unseen.remove(at_i)
-            seen.append(at_i)
-
-            p_sum += len(seen) / (i + 1)
-
-    return p_sum / len(ground_truth)
+def average_precision(ground_truth, prediction, k=10):
+    r = get_relevance_list(ground_truth, prediction, k)
+    out = [precision_at_k(r, k + 1) for k in range(r.size) if r[k]]
+    if not out:
+        return 0.
+    return np.sum(out) / min(k, len(ground_truth))
 
 
-def hitrate(ground_truth, predicted, k=5):
+def get_relevance_list(ground_truth, prediction, k=10):
+    return np.asarray([1 if item in ground_truth else 0 for item in prediction[:k]])
+
+
+def hitrate(ground_truth, predicted, k=10):
     sampled_item = choice(ground_truth)
 
     return 1 if sampled_item in predicted[:k] else 0
 
 
-def construct_collaborative_graph(u_r_map, idx_movie, idx_entity):
-    G = Graph()
+def construct_collaborative_graph(G, u_r_map, idx_movie, idx_entity):
     for user, ratings in u_r_map.items():
         G.add_node(user)
 
@@ -106,44 +98,34 @@ def run():
             0: None,  # Ignore don't know ratings
             1: 1
         },
-        restrict_entities=['Category'],
-        split_ratio=[75, 25]
+        restrict_entities=None,
+        split_ratio=[70, 30]
     )
 
     idx_entity = {value: key for key, value in entity_idx.items()}
     idx_movie = {value: key for key, value in movie_idx.items()}
 
-    print(idx_entity[0])
-    print(idx_movie[0])
-
-    for k in range(1, 10):
-        filtered = filter_min_k(u_r_map, k)
-
-        print(f'{k}: {len(filtered)}')
-
-    # G = load_graph('../data/graph/triples.csv', directed=False)
-    G = construct_collaborative_graph(u_r_map, idx_movie, idx_entity)
+    G = construct_collaborative_graph(Graph(), u_r_map, idx_movie, idx_entity)
 
     all_movies = set(movie_idx.keys())
 
     # Static, non-personalized measure of top movies
     top_movies = get_top_movies(u_r_map, idx_movie)
 
+    # Try different samples
     for samples in range(1, 11):
         count = 0
 
         sum_popular_ap = 0
         sum_entity_ap = 0
         sum_movie_ap = 0
-        sum_global_ap = 0
 
         hits_popular = 0
         hits_entity = 0
         hits_movie = 0
-        hits_global = 0
 
         for user, ratings in filter_min_k(u_r_map, samples).items():
-            movies = [idx_movie[head] for head, tail in ratings['movies']]
+            movies = [idx_movie[head] for head, tail in ratings['test']]
 
             if movies:
                 # Sample k entities
@@ -152,24 +134,19 @@ def run():
                 # Sample k movies
                 sampled_movies = [idx_movie[head] for head, _ in sample(ratings['movies'], samples)]
 
-                # Predicted liked movies guessed on entities and movies
+                # Predict liked movies guessed on entities and movies
                 entity_prediction = personalized_pagerank(G, all_movies, sampled_entities)
                 movie_prediction = personalized_pagerank(G, all_movies, sampled_movies)
-
-                # Predicted like movies guessed on global PageRank
-                global_prediction = personalized_pagerank(G, all_movies, [])
 
                 # Get average precisions
                 sum_popular_ap += average_precision(movies, top_movies)
                 sum_entity_ap += average_precision(movies, entity_prediction)
                 sum_movie_ap += average_precision(movies, movie_prediction)
-                sum_global_ap += average_precision(movies, global_prediction)
 
                 # Get hit-rates
                 hits_popular += hitrate(movies, top_movies)
                 hits_entity += hitrate(movies, entity_prediction)
                 hits_movie += hitrate(movies, movie_prediction)
-                hits_global += hitrate(movies, global_prediction)
 
                 count += 1
 
@@ -177,16 +154,12 @@ def run():
         print(f'Popular MAP: {sum_popular_ap / count}')
         print(f'Entity MAP: {sum_entity_ap / count}')
         print(f'Movie MAP: {sum_movie_ap / count}')
-        print(f'Global MAP: {sum_global_ap / count}')
         print()
 
         print(f'Popular hit-rate: {hits_popular / count}')
         print(f'Entity hit-rate: {hits_entity / count}')
         print(f'Movie hit-rate: {hits_movie / count}')
-        print(f'Global hit-rate: {hits_global / count}')
         print()
-
-    print(G)
 
 
 if __name__ == '__main__':
