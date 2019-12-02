@@ -23,7 +23,7 @@ def knn(user_vectors, user, own_vector):
     # Shuffle s.t. any secondary ordering is random
     shuffle(similarities)
 
-    return sorted(similarities, key=lambda x: x[1], reverse=True)[:5]
+    return sorted(similarities, key=lambda x: x[1], reverse=True)
 
 
 def predict_movies(idx_movie, u_r_map, neighbour_weights, exclude=None):
@@ -48,7 +48,7 @@ def run():
             1: 1
         },
         restrict_entities=None,
-        split_ratio=[80, 20]
+        split_ratio=[100, 0]
     )
 
     # Add movies to the entity_idx map
@@ -83,7 +83,7 @@ def run():
         count = 0
 
         for user, ratings in filter_min_k(u_r_map, samples).items():
-            ground_truth = [idx_movie[head] for head, rating in ratings['test'] if rating == 1]
+            ground_truth = [idx_movie[head] for head, rating in ratings['movies'] if rating == 1]
             if not ground_truth:
                 continue
 

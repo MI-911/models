@@ -15,13 +15,14 @@ def filter_min_k(u_r_map, k):
     return filter_map(u_r_map, condition=lambda x: len(x['movies']) >= k and len(x['entities']) >= k)
 
 
-def personalized_pagerank(G, movies=None, entities=None, alpha=0.85):
+def personalized_pagerank(G, movies=None, entities=None, alpha=0.75):
     if not movies:
         return []
 
-    personalization = {entity: 1 for entity in entities} if entities else None
+    nodes = set(G.nodes.keys())
+    personalization = {entity: 1 for entity in entities if entity in nodes} if entities else None
 
-    res = list(pagerank_scipy(G, alpha=alpha, personalization=personalization).items())
+    res = list(pagerank_scipy(G, alpha=alpha, personalization=personalization if personalization else None).items())
 
     # Filter movies only and return sorted list
     filtered = [(head, tail) for head, tail in res if head in movies and head not in entities]
@@ -71,12 +72,15 @@ def hitrate(left_out, predicted, k=10):
     return 1 if left_out in predicted[:k] else 0
 
 
-def construct_collaborative_graph(G, u_r_map, idx_movie, idx_entity):
+def construct_collaborative_graph(G, u_r_map, idx_movie, idx_entity, exclude=None):
     for user, ratings in u_r_map.items():
         G.add_node(user)
 
         for head, rating in ratings['movies']:
             head = idx_movie[head]
+            if exclude and (user, head) in exclude:
+                continue
+
             G.add_node(head)
             G.add_edge(user, head)
 
@@ -96,15 +100,12 @@ def run():
             0: None,  # Ignore don't know ratings
             1: 1
         },
-        restrict_entities=None,
-        split_ratio=[75, 25]
+        restrict_entities=['Person'],
+        split_ratio=[100, 0]
     )
 
     idx_entity = {value: key for key, value in entity_idx.items()}
     idx_movie = {value: key for key, value in movie_idx.items()}
-
-    # G = load_graph(graph_path='../data/graph/triples.csv', directed=False)
-    G = construct_collaborative_graph(Graph(), u_r_map, idx_movie, idx_entity)
 
     all_movies = set(movie_idx.keys())
 
@@ -124,16 +125,21 @@ def run():
         hits_movie = 0
 
         for user, ratings in filter_min_k(u_r_map, samples).items():
-            ground_truth = [idx_movie[head] for head, tail in ratings['test']]
+            # Sample k entities
+            sampled_entities = [idx_entity[head] for head, _ in sample(ratings['entities'], samples)]
+
+            # Sample k movies
+            sampled_movies = [idx_movie[head] for head, _ in sample(ratings['movies'], samples)]
+
+            # Use remaining movies as ground truth
+            ground_truth = [idx_movie[head] for head, tail in ratings['movies'] if head not in sampled_movies]
             left_out = choice(ground_truth)
 
+            # Construct graph without user's ground truth connections
+            exclude_ratings = {(user, movie) for movie in ground_truth}
+            G = construct_collaborative_graph(Graph(), u_r_map, idx_movie, idx_entity, exclude=exclude_ratings)
+
             if ground_truth:
-                # Sample k entities
-                sampled_entities = [idx_entity[head] for head, _ in sample(ratings['entities'], samples)]
-
-                # Sample k movies
-                sampled_movies = [idx_movie[head] for head, _ in sample(ratings['movies'], samples)]
-
                 # Predict liked movies guessed on entities and movies
                 entity_prediction = personalized_pagerank(G, all_movies, sampled_entities)
                 movie_prediction = personalized_pagerank(G, all_movies, sampled_movies)
