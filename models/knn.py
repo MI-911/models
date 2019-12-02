@@ -8,7 +8,7 @@ import numpy as np
 
 
 def similarity(a, b):
-    return 1 - spatial.distance.cosine(a, b)
+    return a.dot(b)
 
 
 def knn(user_vectors, user, own_vector):
@@ -47,7 +47,7 @@ def run():
             0: None,  # Ignore don't know ratings
             1: 1
         },
-        restrict_entities=None,
+        restrict_entities=['Person'],
         split_ratio=[90, 10]
     )
 
