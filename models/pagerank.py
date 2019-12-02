@@ -15,7 +15,7 @@ def filter_min_k(u_r_map, k):
     return filter_map(u_r_map, condition=lambda x: len(x['movies']) >= k and len(x['entities']) >= k)
 
 
-def personalized_pagerank(G, movies=None, entities=None, alpha=0.75):
+def personalized_pagerank(G, movies=None, entities=None, alpha=0.85):
     if not movies:
         return []
 
@@ -56,7 +56,7 @@ def precision_at_k(r, k):
     return np.mean(r)
 
 
-def average_precision(ground_truth, prediction, k=10):
+def average_precision(ground_truth, prediction, k=15):
     r = get_relevance_list(ground_truth, prediction, k)
     out = [precision_at_k(r, k + 1) for k in range(r.size) if r[k]]
     if not out:
@@ -64,11 +64,11 @@ def average_precision(ground_truth, prediction, k=10):
     return np.sum(out) / min(k, len(ground_truth))
 
 
-def get_relevance_list(ground_truth, prediction, k=10):
+def get_relevance_list(ground_truth, prediction, k=15):
     return np.asarray([1 if item in ground_truth else 0 for item in prediction[:k]])
 
 
-def hitrate(left_out, predicted, k=10):
+def hitrate(left_out, predicted, k=15):
     return 1 if left_out in predicted[:k] else 0
 
 
@@ -135,7 +135,7 @@ def run():
             ground_truth = [idx_movie[head] for head, tail in ratings['movies'] if head not in sampled_movies]
             left_out = choice(ground_truth)
 
-            # Construct graph without user's ground truth connections
+            # Construct graph without user's ground truth ratings
             exclude_ratings = {(user, movie) for movie in ground_truth}
             G = construct_collaborative_graph(Graph(), u_r_map, idx_movie, idx_entity, exclude=exclude_ratings)
 

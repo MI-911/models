@@ -1,5 +1,5 @@
 from random import sample, shuffle, choice
-
+import itertools
 from data.training import cold_start
 from scipy import spatial
 
@@ -83,7 +83,14 @@ def run():
         count = 0
 
         for user, ratings in filter_min_k(u_r_map, samples).items():
+            subset_samples = {}
+            for subset, idx_lookup in subsets.items():
+                subset_samples[subset] = [(idx_lookup[idx], rating) for idx, rating in sample(ratings[subset], samples)]
+
+            all_samples = set(itertools.chain.from_iterable(subset_samples.values()))
+
             ground_truth = [idx_movie[head] for head, rating in ratings['movies'] if rating == 1]
+            ground_truth = [head for head in ground_truth if head not in all_samples]
             if not ground_truth:
                 continue
 
@@ -91,7 +98,7 @@ def run():
 
             # Try both subsets
             for subset, idx_lookup in subsets.items():
-                sampled = [(idx_lookup[idx], rating) for idx, rating in sample(ratings[subset], samples)]
+                sampled = subset_samples[subset]
 
                 own_vector = np.zeros(len(entity_idx))
                 for uri, rating in sampled:
@@ -103,7 +110,7 @@ def run():
 
                 # Add to metrics
                 subset_aps[subset] += average_precision(ground_truth, predictions)
-                subset_hits[subset] += 1 if left_out in predictions[:10] else 0
+                subset_hits[subset] += 1 if left_out in predictions[:15] else 0
 
             count += 1
 
