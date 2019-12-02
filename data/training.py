@@ -179,7 +179,7 @@ def cold_start(from_path='../data/user_ratings_map.json', conversion_map=None, s
         idx_u_r_map[u]['movies'] = training
         idx_u_r_map[u]['test'] = test
 
-    return idx_u_r_map, uc, mc, ec
+    return idx_u_r_map, uc, m_uri_map, e_uri_map
 
 
 if __name__ == '__main__':
