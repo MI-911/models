@@ -23,7 +23,7 @@ def knn(user_vectors, user, own_vector):
     # Shuffle s.t. any secondary ordering is random
     shuffle(similarities)
 
-    return sorted(similarities, key=lambda x: x[1], reverse=True)
+    return sorted(similarities, key=lambda x: x[1], reverse=True)[:5]
 
 
 def predict_movies(idx_movie, u_r_map, neighbour_weights, exclude=None):
@@ -47,8 +47,8 @@ def run():
             0: None,  # Ignore don't know ratings
             1: 1
         },
-        restrict_entities=['Person'],
-        split_ratio=[90, 10]
+        restrict_entities=None,
+        split_ratio=[80, 20]
     )
 
     # Add movies to the entity_idx map
@@ -116,4 +116,3 @@ def run():
 
 if __name__ == '__main__':
     run()
-    # TODO: Consider similarity when adding movie weight

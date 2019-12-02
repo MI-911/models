@@ -67,10 +67,8 @@ def get_relevance_list(ground_truth, prediction, k=10):
     return np.asarray([1 if item in ground_truth else 0 for item in prediction[:k]])
 
 
-def hitrate(ground_truth, predicted, k=10):
-    sampled_item = choice(ground_truth)
-
-    return 1 if sampled_item in predicted[:k] else 0
+def hitrate(left_out, predicted, k=10):
+    return 1 if left_out in predicted[:k] else 0
 
 
 def construct_collaborative_graph(G, u_r_map, idx_movie, idx_entity):
@@ -99,12 +97,13 @@ def run():
             1: 1
         },
         restrict_entities=None,
-        split_ratio=[70, 30]
+        split_ratio=[75, 25]
     )
 
     idx_entity = {value: key for key, value in entity_idx.items()}
     idx_movie = {value: key for key, value in movie_idx.items()}
 
+    # G = load_graph(graph_path='../data/graph/triples.csv', directed=False)
     G = construct_collaborative_graph(Graph(), u_r_map, idx_movie, idx_entity)
 
     all_movies = set(movie_idx.keys())
@@ -125,9 +124,10 @@ def run():
         hits_movie = 0
 
         for user, ratings in filter_min_k(u_r_map, samples).items():
-            movies = [idx_movie[head] for head, tail in ratings['test']]
+            ground_truth = [idx_movie[head] for head, tail in ratings['test']]
+            left_out = choice(ground_truth)
 
-            if movies:
+            if ground_truth:
                 # Sample k entities
                 sampled_entities = [idx_entity[head] for head, _ in sample(ratings['entities'], samples)]
 
@@ -139,14 +139,14 @@ def run():
                 movie_prediction = personalized_pagerank(G, all_movies, sampled_movies)
 
                 # Get average precisions
-                sum_popular_ap += average_precision(movies, top_movies)
-                sum_entity_ap += average_precision(movies, entity_prediction)
-                sum_movie_ap += average_precision(movies, movie_prediction)
+                sum_popular_ap += average_precision(ground_truth, top_movies)
+                sum_entity_ap += average_precision(ground_truth, entity_prediction)
+                sum_movie_ap += average_precision(ground_truth, movie_prediction)
 
                 # Get hit-rates
-                hits_popular += hitrate(movies, top_movies)
-                hits_entity += hitrate(movies, entity_prediction)
-                hits_movie += hitrate(movies, movie_prediction)
+                hits_popular += hitrate(left_out, top_movies)
+                hits_entity += hitrate(left_out, entity_prediction)
+                hits_movie += hitrate(left_out, movie_prediction)
 
                 count += 1
 
