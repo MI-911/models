@@ -5,9 +5,9 @@ import json
 from models.fmf import FunctionalMatrixFactorizaton
 import pandas as pd
 
-LIKE = 5
-DISLIKE = 1
-UNKNOWN = -1
+LIKE = 1
+DISLIKE = -1
+UNKNOWN = 0
 
 
 class User:
@@ -142,12 +142,17 @@ def load_fmf_users(with_entities=False):
     m_uri_idx_map, mc = {}, 0
     e_uri_idx_map, ec = {}, 0
 
+    m_idx_uri_map = {}
+    e_idx_uri_map = {}
+
     for u, m, r in movie_ratings:
         if u not in uid_idx_map:
             uid_idx_map[u] = uc
             uc += 1
         if m not in m_uri_idx_map:
             m_uri_idx_map[m] = mc
+            if mc not in m_idx_uri_map:
+                m_idx_uri_map[mc] = m
             mc += 1
     for u, e, r in entity_ratings:
         if u not in uid_idx_map:
@@ -155,6 +160,8 @@ def load_fmf_users(with_entities=False):
             uc += 1
         if e not in e_uri_idx_map:
             e_uri_idx_map[e] = ec
+            if ec not in e_idx_uri_map:
+                e_idx_uri_map[ec] = e
             ec += 1
 
     # Convert the triples to index notation, convert ratings
@@ -190,7 +197,7 @@ def load_fmf_users(with_entities=False):
     train_users = [u for _, u in train_users.items()]
     test_users = [u for _, u in test_users.items()]
 
-    return train_users, test_users, uc, mc, ec
+    return train_users, test_users, uc, mc, ec, m_idx_uri_map, e_idx_uri_map
 
 
 def load_fmf_users_movielens():
@@ -270,18 +277,40 @@ def load_fmf_users_movielens():
 
 
 if __name__ == '__main__':
+    with open('../data/mindreader/entities.csv') as fp:
+        entities = pd.read_csv(fp)
+    entity_map = {uri: name for uri, name in entities[['uri', 'name']].values}
+
     # 1. Functional Matrix Factorization on MindReader data, only asks towards movies
-    train_users, test_users, n_users, n_movies, n_entities = load_fmf_users(with_entities=False)
+    train_users, test_users, n_users, n_movies, n_entities, m_idx_uri_map, e_idx_uri_map = load_fmf_users(with_entities=False)
+    # print(len(train_users))
     k = 10
+    m_idx_name_map = {}
+    e_idx_name_map = {}
+    for m in range(n_movies):
+        m_idx_name_map[m] = entity_map[m_idx_uri_map[m]]
+    for e in range(n_entities):
+        e_idx_name_map[e] = entity_map[e_idx_uri_map[e]]
+
     model = FunctionalMatrixFactorizaton(n_users, n_movies, n_entities, k=k, max_depth=3,
-                                         entities_in_question_set=False)
+                                         entities_in_question_set=False,
+                                         m_idx_name_map=m_idx_name_map,
+                                         e_idx_name_map=e_idx_name_map)
     model.fit(train_users, test_users)
 
     # 2. Functional Matrix Factorization on MindReader data, only asks towards entities
-    train_users, test_users, n_users, n_movies, n_entities = load_fmf_users(with_entities=True)
+    train_users, test_users, n_users, n_movies, n_entities, m_idx_uri_map, e_idx_uri_map = load_fmf_users(with_entities=True)
     k = 10
+    m_idx_name_map = {}
+    e_idx_name_map = {}
+    for m in range(n_movies):
+        m_idx_name_map[m] = entity_map[m_idx_uri_map[m]]
+    for e in range(n_entities):
+        e_idx_name_map[e] = entity_map[e_idx_uri_map[e]]
     model = FunctionalMatrixFactorizaton(n_users, n_movies, n_entities, k=k, max_depth=3,
-                                         entities_in_question_set=True)
+                                         entities_in_question_set=True,
+                                         m_idx_name_map=m_idx_name_map,
+                                         e_idx_name_map=e_idx_name_map)
     model.fit(train_users, test_users)
 
     # 3. Functional Matrix Factorization on MovieLens data

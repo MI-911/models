@@ -1,9 +1,9 @@
 import numpy as np
 import math
 
-LIKE = 5
-DISLIKE = 1
-UNKNOWN = -1
+LIKE = 1
+DISLIKE = -1
+UNKNOWN = 0
 
 
 class Node:
@@ -15,6 +15,7 @@ class Node:
         self.dislike_child = None
         self.unknown_child = None
         self.p = None  # The split item
+        self.depth = None
 
     def calculate_profile(self):
         coeff_matrix = np.zeros((self.fmf.k, self.fmf.k))
@@ -57,6 +58,7 @@ class Node:
         return RL, RD, RU
 
     def split(self, is_entity, depth):
+        self.depth = depth
         smallest_loss = math.inf
         best_split_item = None
         bestRLn, bestRDn, bestRUn = None, None, None
@@ -93,6 +95,7 @@ class Node:
         self.unknown_child = bestRUn
 
         self.p = best_split_item
+        self.fmf.question_items.remove(self.p)
 
         # Split the child nodes
         if depth < self.fmf.max_depth:
@@ -117,22 +120,35 @@ class Node:
 
         return self.profile
 
+    def print(self, idx_name_map):
+        if self.p is None:
+            return
+        print(f'{idx_name_map[self.p]} at depth {self.depth} ({len(self.users)} users)')
+        if self.like_child is not None:
+            self.like_child.print(idx_name_map)
+        if self.dislike_child is not None:
+            self.dislike_child.print(idx_name_map)
+        if self.unknown_child is not None:
+            self.unknown_child.print(idx_name_map)
+
 
 class FunctionalMatrixFactorizaton:
-    def __init__(self, n_users, n_movies, n_entities, k, max_depth, entities_in_question_set=False):
+    def __init__(self, n_users, n_movies, n_entities, k, max_depth, entities_in_question_set=False, m_idx_name_map=None, e_idx_name_map=None):
         self.n_movies = n_movies
         self.n_users = n_users
+        self.n_entities = n_entities
         self.k = k
         self.max_depth = max_depth
+
+        self.m_idx_name_map = m_idx_name_map
+        self.e_idx_name_map = e_idx_name_map
 
         # Movie embeddings
         self.M = np.random.rand(n_movies, k)
         self.U = np.random.rand(n_users, k)
 
         # Questionable entities
-        # TODO: This can be changed to entities!
         self.is_entity = entities_in_question_set
-        self.question_items = [i for i in range(n_movies)] if not self.is_entity else [i for i in range(n_entities)]
 
     def update_user_embeddings(self, train_users, test_users, tree, is_entity):
         for user in train_users:
@@ -173,6 +189,8 @@ class FunctionalMatrixFactorizaton:
                 test_sse += (Ta @ v - r) ** 2
                 test_n += 1
 
+        train_rmse = np.sqrt(train_sse / train_n)
+        test_rmse = np.sqrt(test_sse / test_n)
         print(f'Train RMSE: {np.sqrt(train_sse / train_n)}, Test RMSE: {np.sqrt(test_sse / test_n)}')
 
         tp_train, fp_train = 0, 0
@@ -197,7 +215,11 @@ class FunctionalMatrixFactorizaton:
                 else:
                     fp_test += 1
 
-        print(f'Train Precision: {fp_train / (tp_train + fp_train)}, Test Precision: {tp_test / (tp_test + fp_test)}')
+        train_p = tp_train / (tp_train + fp_train)
+        test_p = tp_test / (tp_test + fp_test)
+
+        print(f'Train Precision: {tp_train / (tp_train + fp_train)} (TP {tp_train}, FP {fp_train}), Test Precision: {tp_test / (tp_test + fp_test)} (TP {tp_test} FP {fp_test})')
+        return train_p * 100, test_p * 100, train_rmse, test_rmse
 
     def top_n_movies(self, user, n):
         Ta = self.U[user.id]
@@ -206,18 +228,25 @@ class FunctionalMatrixFactorizaton:
         return [i for i, prediction in sorted_predictions][:n]
 
     def fit(self, train_users, test_users):
+
         is_entity = self.is_entity  # If the questionable_items is entities, set is_entities to True
 
-        n_iter = 100
+        n_iter = 20
 
         print(f'Building root node')
         tree = Node(train_users, fmf=self)
         tree.calculate_profile()  # Assign a profile to the root
 
+        train_rmses = []
+        test_rmses = []
+        train_precs = []
+        test_precs = []
+
         for i in range(n_iter):
             print(f'Beginning iteration {i}')
 
             # 1. Fit the tree
+            self.question_items = set([i for i in range(self.n_movies)] if not self.is_entity else [i for i in range(self.n_entities)])
             tree.split(is_entity=is_entity, depth=0)
 
             # 2. Conduct interviews to fill out the user embeddings
@@ -228,4 +257,19 @@ class FunctionalMatrixFactorizaton:
 
             # 4. Evaluate
             print(f'Evaluating...')
-            self.evaluate(train_users, test_users)
+            train_p, test_p, train_rmse, test_rmse = self.evaluate(train_users, test_users)
+            train_rmses.append(train_rmse)
+            test_rmses.append(test_rmse)
+            train_precs.append(train_p)
+            test_precs.append(test_p)
+
+            tree.print(self.m_idx_name_map if not self.is_entity else self.e_idx_name_map)
+
+        import matplotlib.pyplot as plt
+        plt.plot(train_rmses, color='orange', label='Train RMSE')
+        plt.plot(test_rmses, color='skyblue', label='Test RMSE')
+        plt.plot(train_precs, color='red', label='Train precision')
+        plt.plot(test_precs, color='green', label='Test precision')
+        plt.legend()
+        plt.title(f'FMF asking movies' if not self.is_entity else 'FMF asking entities' + f' at {n_iter} iterations')
+        plt.show()

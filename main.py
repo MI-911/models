@@ -12,6 +12,8 @@ import random
 import json
 from os.path import join
 
+import sys
+
 MOVIES = 'MOVIES'
 ENTITIES = 'ENTITIES'
 BOTH = 'BOTH'
@@ -104,20 +106,23 @@ def run_eval(model, users, evaluation=False, M=10):
 
 
 if __name__ == '__main__':
+    asking_for = sys.argv[1]
+    n_questions = int(sys.argv[2])
+
     random.seed(42)
 
     min_num_ratings = 5
     top_n = None
 
     data_set = generate_dataset(
-        mindreader_dir='../data/mindreader',
+        mindreader_dir='./data/mindreader',
         top_n=top_n,
     )
 
     # Define hyper parameters
     n_epochs = 100
     learning_rate = 0.001
-    n_questions = 2
+    # n_questions = 2
     batch_size = 32
     interview_layer_size = 512
     n_items = data_set.n_movies + data_set.n_entities
@@ -140,7 +145,7 @@ if __name__ == '__main__':
     print(f'Loaded {len(train_users)} training users and {len(test_users)} test users')
 
     # What are we asking for?
-    asking_for = MOVIES
+    # asking_for = BOTH
 
     # Training histories
     train_history = []
@@ -150,12 +155,12 @@ if __name__ == '__main__':
     M = 10  # MAP@M
 
     # Save dir
-    SAVE_DIR = '../results/'
+    SAVE_DIR = './results/'
 
     for e in range(n_epochs):
         # Shuffle the data
-        # train_users = DataSet.shuffle(train_users)  # Run this to shuffle users and their answers
-        random.shuffle(train_users)  # Run this to shuffle the order of the users, only
+        # train_users = DataSet.shuffle(train_users)
+        random.shuffle(train_users)
         # test_users = DataSet.shuffle(test_users)
 
         # Activate gradients
@@ -209,37 +214,23 @@ if __name__ == '__main__':
         test_precision.append(test_map)
 
     # Post training stats
+    f_name = f'INN-{asking_for}-{n_epochs}-{n_questions}Q'
+
     stats = {
-        'n_epochs': n_epochs,
         'asking_for': asking_for.lower(),
-        'min_mse': {
-            'train': float(min(train_history).numpy().sum()),
-            'test': float(min(test_history).numpy().sum())
+        'n_questions': n_questions,
+        'n_epochs': n_epochs,
+        'learning_rate': learning_rate,
+        'train': {
+            'mse_history': [float(mse.numpy().sum()) for mse in train_history],
+            f'map@{M}_history': [float(p) for p in train_precision]
         },
-        f'max_map@{M}': {
-            'train': max(train_precision),
-            'test': max(test_precision)
+        'test': {
+            'mse_history': [float(mse.numpy().sum()) for mse in test_history],
+            f'map@{M}_history': [float(p) for p in test_precision]
         }
     }
 
-    f_name = f'INN-{asking_for}-{n_epochs}-{n_questions}Q'
-
     with open(join(SAVE_DIR, f'{f_name}.json'), 'w') as fp:
         json.dump(stats, fp, indent=True)
-
-    plt.plot(train_history, color='orange', label='Train MSE')
-    plt.plot(test_history, color='skyblue', label='Test MSE')
-    plt.legend()
-    plt.title(f'Interviewing Neural Network ({n_epochs} epochs), asking for {asking_for.lower()} (lr={learning_rate})')
-    plt.savefig(join(SAVE_DIR, f'{f_name}-MSE.png'))
-    plt.clf()
-
-    plt.plot(train_precision, color='orange', label='Train MAP@10')
-    plt.plot(test_precision, color='skyblue', label='Test MAP@10')
-    plt.legend()
-    plt.title(f'Interviewing Neural Network ({n_epochs} epochs), asking for {asking_for.lower()} (lr={learning_rate})')
-    plt.savefig(join(SAVE_DIR, f'{f_name}-MAP.png'))
-    plt.clf()
-
-
 

@@ -3,16 +3,30 @@ import torch.nn as nn
 import torch.nn.functional as ff
 
 
-class NeuralNetworkAll(nn.Module):
-    def __init__(self, n_movies, n_entities, n_fc1, n_fc2):
-        super(NeuralNetworkAll, self).__init__()
-        self.input = nn.Linear(n_movies + n_entities, n_fc1)
-        self.fc1 = nn.Linear(n_fc1, n_fc2)
-        self.fc2 = nn.Linear(n_fc2, n_movies + n_entities)
+class InterviewingNeuralNetwork(nn.Module):
+    def __init__(self, n_questions=3, n_items=100, hidden_size=256):
+        super(InterviewingNeuralNetwork, self).__init__()
 
-    def forward(self, one_hot):
-        x = ff.sigmoid(self.input(one_hot))
-        x = ff.sigmoid(self.fc1(x))
-        out = ff.sigmoid(self.fc2(x))
+        self.n_questions = n_questions
+        self.n_items = n_items
+        self.input_size = n_items * 2  # Question/answer pairs for every item
+        self.hidden_size = hidden_size
 
-        return out
+        self.fc1 = nn.Linear(self.input_size, self.hidden_size)  # 2* n_item-d answer vector
+        self.fc2 = nn.Linear(self.hidden_size, self.n_items)  # n_item-d question vector
+
+        self.fc3 = nn.Linear(self.hidden_size, self.n_items)  # 100-d ratings vector
+
+    def forward(self, answers, interviewing=True):
+        if interviewing:
+            # Process the answers and generate a question
+            x = tt.tanh(self.fc1(answers))
+            x = tt.sigmoid(self.fc2(x))
+            q = ff.one_hot(x.argmax(), num_classes=self.n_items)
+            return q
+
+        else:
+            # Process the answers and generate ratings
+            x = tt.tanh(self.fc1(answers))
+            x = tt.tanh(self.fc3(x))
+            return x
