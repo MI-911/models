@@ -1,5 +1,5 @@
 import json
-from random import shuffle, sample
+from random import shuffle, sample, choice
 
 import keras
 from keras import Model, Input, Sequential, regularizers
@@ -8,14 +8,16 @@ from keras.layers import Dense, Dropout
 from data.training import cold_start
 import numpy as np
 
-from utilities.util import filter_min_k
+from utilities.metrics import average_precision, hitrate, ndcg_at_k
+from utilities.util import filter_min_k, get_top_movies
 
 
 def get_model(entity_len, movie_dim):
     model = Sequential()
-    model.add(Dense(512, input_dim=entity_len))
+
+    model.add(Dense(256, input_dim=entity_len, activation='tanh'))
     model.add(Dropout(0.1))
-    model.add(Dense(256, input_dim=entity_len))
+    model.add(Dense(128, activation='tanh'))
     model.add(Dense(movie_dim, activation='tanh'))
 
     print(model.summary())
@@ -42,7 +44,7 @@ def run():
     )
 
     # Get entities
-    with open('data/mindreader/entities_clean.json') as fp:
+    with open('../data/mindreader/entities_clean.json') as fp:
         entities = dict()
 
         for uri, name, labels in json.load(fp):
@@ -124,7 +126,7 @@ def run():
             for i in range(len(y_val)):
                 top_k = y_predict[i].argsort()[::-1][:5]
                 true_index = y_val[i].argmax()
-                if y_val[i][true_index] != 1.0:
+                if y_val[i][true_index] != like_signal:
                     continue
 
                 if true_index in top_k:
@@ -138,29 +140,70 @@ def run():
 
     # Take 25% of test users' liked movies as test
     for user, ratings in test_users:
-        print(f'b4 {len(ratings["movies"])}')
-        liked_movies = [movie for movie, rating in ratings['movies'] if rating == like_signal]
+        liked_movies = [(movie, rating) for movie, rating in ratings['movies'] if rating == like_signal]
         ratings['test'] = liked_movies[:int(len(liked_movies) * 0.75)]
 
         # Exclude test from seed movies
-        ratings['movies'] = [movie for movie, rating in ratings['movies'] if movie not in ratings['test']]
+        ratings['movies'] = [(movie, rating) for movie, rating in ratings['movies'] if (movie, rating) not in ratings['test']]
+
+    # Static, non-personalized measure of top movies
+    top_movies = get_top_movies(u_r_map, idx_movie)
 
     # Test with different samples
+    subsets = {'entities': idx_entity, 'movies': idx_movie, 'popular': None}
+    k = 10
+    for samples in range(1, 6):
+        filtered = min_k(test_users, samples)
+        if not filtered:
+            break
 
-    # Smoke test
-    while True:
-        print(f'Ready for next input')
-        inp = input().split(' ')
+        subset_hits = {subset: 0 for subset in subsets}
+        subset_aps = {subset: 0 for subset in subsets}
+        subset_ndcg = {subset: 0 for subset in subsets}
+        count = 0
 
-        smoke_x = np.zeros(len(entity_idx))
-        smoke_x[entity_idx[f'http://www.wikidata.org/entity/{inp[0]}']] = inp[1]
+        for user, ratings in filtered:
+            if not ratings['test']:
+                continue
 
-        pred = model.predict(np.array([smoke_x])).argsort()[0][::-1][:10]
+            ground_truth = [idx_movie[idx] for idx, _ in ratings['test']]
+            left_out = choice(ground_truth)
 
-        for arg in pred:
-            predicted_uri = idx_movie[arg]
+            subset_samples = {subset: sample(ratings[subset], samples) for subset in subsets if subset != 'popular'}
 
-            print(f'{entities[predicted_uri]} ({predicted_uri})')
+            # Try both subsets
+            subset_predictions = dict()
+            for subset, idx_lookup in subsets.items():
+                if subset == 'popular':
+                    subset_predictions[subset] = top_movies
+
+                    continue
+
+                sampled = subset_samples[subset]
+
+                # Input vector from sampled
+                x = np.zeros(len(idx_entity))
+                for idx, rating in sampled:
+                    uri = subsets[subset][idx]
+                    x[entity_idx[uri]] = rating
+
+                prediction = [idx_movie[pred_idx] for pred_idx in model.predict(np.array([x])).argsort()[0][::-1]]
+                subset_predictions[subset] = prediction
+
+            # Metrics
+            for subset, predictions in subset_predictions.items():
+                subset_aps[subset] += average_precision(ground_truth, predictions, k=k)
+                subset_hits[subset] += hitrate(left_out, predictions, k=k)
+                subset_ndcg[subset] += ndcg_at_k(ground_truth, predictions, k=k)
+
+            count += 1
+
+        print(f'{samples} samples:')
+        for subset in subsets:
+            print(f'{subset.title()} MAP: {subset_aps[subset] / count * 100}%')
+            print(f'{subset.title()} hit-rate: {subset_hits[subset] / count * 100}%')
+            print(f'{subset.title()} NDCG: {subset_ndcg[subset] / count * 100}%')
+            print()
 
 
 if __name__ == '__main__':
