@@ -3,8 +3,10 @@ import itertools
 from data.training import cold_start
 from scipy import spatial
 
-from models.pagerank import filter_min_k, get_relevance_list, average_precision
 import numpy as np
+
+from utilities.metrics import ndcg_at_k, average_precision, hitrate
+from utilities.util import filter_min_k
 
 
 def similarity(a, b):
@@ -32,7 +34,7 @@ def predict_movies(idx_movie, u_r_map, neighbour_weights, exclude=None):
     for neighbour, weight in neighbour_weights:
         for movie, rating in u_r_map[neighbour]['movies']:
             movie_uri = idx_movie[movie]
-            movie_weight[movie_uri] = movie_weight.get(movie_uri, 0) + rating * weight
+            movie_weight[movie_uri] = movie_weight.get(movie_uri, 0) + 1
 
     # Get weighted prediction and exclude excluded URIs
     predictions = sorted(list(movie_weight.items()), key=lambda x: x[1], reverse=True)
@@ -43,7 +45,7 @@ def run():
     u_r_map, n_users, movie_idx, entity_idx = cold_start(
         from_path='../data/mindreader/user_ratings_map.json',
         conversion_map={
-            -1: -1,
+            -1: 0,
             0: None,  # Ignore don't know ratings
             1: 1
         },
@@ -77,9 +79,12 @@ def run():
                 user_vectors[user][uri_idx] = rating
 
     # Sample k movies and entities
+    k = 10
     for samples in range(1, 11):
         subset_hits = {subset: 0 for subset in subsets}
         subset_aps = {subset: 0 for subset in subsets}
+        subset_ndcg = {subset: 0 for subset in subsets}
+
         count = 0
 
         for user, ratings in filter_min_k(u_r_map, samples).items():
@@ -109,15 +114,17 @@ def run():
                 predictions = predict_movies(idx_movie, u_r_map, neighbour_weights, exclude=[h for h, _ in sampled])
 
                 # Add to metrics
-                subset_aps[subset] += average_precision(ground_truth, predictions)
-                subset_hits[subset] += 1 if left_out in predictions[:15] else 0
+                subset_aps[subset] += average_precision(ground_truth, predictions, k=k)
+                subset_hits[subset] += hitrate(left_out, predictions, k=k)
+                subset_ndcg[subset] += ndcg_at_k(ground_truth, predictions, k=k)
 
             count += 1
 
         print(f'{samples} samples:')
         for subset in subsets:
-            print(f'{subset.title()} MAP: {subset_aps[subset] / count}')
-            print(f'{subset.title()} hit-rate: {subset_hits[subset] / count}')
+            print(f'{subset.title()} MAP: {subset_aps[subset] / count * 100}%')
+            print(f'{subset.title()} hit-rate: {subset_hits[subset] / count * 100}%')
+            print(f'{subset.title()} NDCG: {subset_ndcg[subset] / count * 100}%')
             print()
 
 
