@@ -19,8 +19,11 @@ class DeepQInterView(nn.Module):
         self.optimizer = optim.Adam(self.parameters(), lr=alpha)
         self.loss = nn.MSELoss()
 
+        self.device = T.device('cuda:0' if T.cuda.is_available() else 'cpu')
+        self.to(self.device)
+
     def forward(self, observation):
-        state = T.from_numpy(observation).to(T.float)
+        state = T.from_numpy(observation).to(T.float).to(self.Q_eval.device)
         x = T.tanh(self.answer_layer(state))
         x = T.tanh(self.fc1(x))
         x = T.sigmoid(self.question_layer(x))
@@ -112,12 +115,12 @@ class InterviewAgent:
             new_state_batch = self.new_state_memory[batch]
             terminal_batch = self.terminal_memory[batch]
 
-            reward_batch = T.tensor(reward_batch)
-            terminal_batch = T.tensor(terminal_batch)
+            reward_batch = T.tensor(reward_batch).to(self.Q_eval.device)
+            terminal_batch = T.tensor(terminal_batch).to(self.Q_eval.device)
 
-            q_eval = self.Q_eval(state_batch)
+            q_eval = self.Q_eval(state_batch).to(self.Q_eval.device)
             q_target = q_eval.clone()
-            q_next = self.Q_eval(new_state_batch)
+            q_next = self.Q_eval(new_state_batch).to(self.Q_eval.device)
 
             batch_index = np.arange(self.batch_size, dtype=np.int32)
             target_update = reward_batch + \
@@ -128,7 +131,7 @@ class InterviewAgent:
             self.EPSILON = self.EPSILON * self.EPS_DEC if self.EPSILON > \
                                                           self.EPS_MIN else self.EPS_MIN
 
-            loss = self.Q_eval.loss(q_eval, q_target)
+            loss = self.Q_eval.loss(q_eval, q_target).to(self.Q_eval.device)
             loss.backward()
             self.Q_eval.optimizer.step()
 

@@ -1,17 +1,20 @@
 import gym
 from models.dqn import DeepQInterView, InterviewAgent
-from utilities.util import plotLearning
+from utilities.util import plot_learning
 import numpy as np
 from gym import wrappers
 from data.cold_start import generate_dataset, DataSet
-from data.graph_loader import load_labelled_graph
+from data.graph_loader import KnowledgeGraph
+import torch as tt
+import sys
+import json
 
 
 class Environment:
     def __init__(self, interview_length=3):
         self.data_set = generate_dataset(
             mindreader_dir='../data/mindreader',
-            top_n=100,
+            top_n=100
         )
 
         # 1. Load the users
@@ -20,11 +23,17 @@ class Environment:
         self.test_users = DataSet.shuffle(self.test_users)
 
         # 2. Load the KG
+        movie_uris = list(self.data_set.m_uri_idx_map.keys())
+        entity_uris = list(self.data_set.e_uri_idx_map.keys())
+        self.KG = KnowledgeGraph.load_from_triples(
+            graph_path='../data/graph/triples.csv',
+            restrict_nodes=movie_uris + entity_uris)
 
         # 3. Set the current user
         self.current_user = None
         self.user_counter = 0
         self.n_train_users = len(self.train_users)
+        self.n_test_users = len(self.test_users)
 
         # 4. Set the state
         self.n_movies = self.data_set.n_movies
@@ -35,16 +44,28 @@ class Environment:
         # 5. Other info
         self.interview_length = interview_length
         self.current_interview_length = 0
+        self.evaluation = False
+
+    def choose_user(self, u_idx, train=True):
+        self.evaluation = not train
+        self.current_user = self.train_users[u_idx] if train else self.test_users[u_idx]
+        self.current_user.begin_interview()
+        self.state = np.zeros(self.state_size)
+        self.current_interview_length = 0
+
+        return self.state
 
     def reset(self):
         # Choose a new user
         current_user_idx = self.user_counter % self.n_train_users
         self.current_user = self.train_users[current_user_idx]
+        self.current_user.begin_interview()
         self.user_counter += 1
 
         # Reset state
         self.state = np.zeros(self.state_size)
         self.current_interview_length = 0
+        self.evaluation = False
 
         # Return the state as the observation
         return self.state
@@ -53,7 +74,7 @@ class Environment:
         # Assuming an n_movies + n_entities vector, take the argmax as the question.
 
         # Ask the user what they think
-        answer = self._ask(q)
+        answer = self.current_user.ask(q, interviewing=True)
         self.current_interview_length += 1
 
         # Update the state
@@ -61,8 +82,7 @@ class Environment:
         self.state[q + 1] = answer
 
         # Calculate a reward
-        # TODO: This loss must come from the KG!
-        reward = self.state.sum()
+        reward = self._calculate_reward(top_n=20)
 
         # Are we done?
         done = self.current_interview_length >= self.interview_length
@@ -70,55 +90,161 @@ class Environment:
         # Return the state as an observation
         return self.state, reward, done
 
-    def _ask(self, question):
-        answer = self.current_user.ask_movie(question)
-        if answer == 0:
-            answer = self.current_user.ask_entity(question)
-
-        return answer
-
-    def _calculate_reward(self):
+    def _calculate_reward(self, top_n=20):
         # Perform PR with the liked entities as the source nodes
-        # The reward is the average precision of the top-20.33
-        pass
+        # The reward is the average precision of the top-20.
+
+        # 1. Extract the liked and disliked entities
+        liked = np.where(self.state == 1)[0]
+        disliked = np.where(self.state == -1)[0]
+        # 1.1 The uneven indices are the ones containing ratings.
+        #     Also, they are spread in doubled length to contain answers.
+        #     For these items:
+        #     [0, 1, 2, 3, 4, 5]
+        #     We would have the item/answer pairs:
+        #     [0, 0, 1, -1, 2, 1, 3, 1, 4, 1, 5, 0]
+        #     So for every rating, find its doubled item index and
+        #     halve it.
+        liked = [(_i - 1) / 2 for _i in liked if not _i % 2 == 0]
+        disliked = [(_i - 1) / 2 for _i in disliked if not _i % 2 == 0]
+
+        # 2. Convert indices to URIs
+        def convert(idx):
+            if idx in self.data_set.m_idx_uri_map:
+                return self.data_set.m_idx_uri_map[idx]
+            else:
+                return self.data_set.e_idx_uri_map[idx]
+
+        def convert_back(uri):
+            # Should only be movies
+            return self.data_set.m_uri_idx_map[uri]
+
+        liked_uris = map(convert, liked)
+        disliked_uris = map(convert, disliked)
+
+        # 3. Pass to PPR, take the top 20
+        _top_n_liked = self.KG.ppr_top_n(liked_uris, top_n=top_n)
+        _top_n_disliked = self.KG.ppr_top_n(disliked_uris, top_n=top_n)
+
+        # 4. Map back to indices
+        # 4.1 Filter out URIs that we don't have in the ratings map
+        top_n_liked = [uri for uri, pr in _top_n_liked if uri in self.data_set.m_uri_idx_map]
+        top_n_disliked = [uri for uri, pr in _top_n_disliked if uri in self.data_set.m_uri_idx_map]
+
+        top_n_liked = list(map(convert_back, top_n_liked))
+        top_n_disliked = list(map(convert_back, top_n_disliked))
+
+        # 4. For the current user, use their evaluation set as the ground truth.
+        #    For every movie in these predictions, see if they occur correctly in their sets.
+
+        return self._average_precision(top_n_liked)
+
+    def _average_precision(self, like_predictions):
+        n = len(like_predictions)
+        n_correct = 0
+        pre_avg = 0
+        for _i, prediction in enumerate(like_predictions, start=1):
+            answer = self.current_user.ask(prediction, interviewing=False)
+            if answer == 1:
+                n_correct += 1
+                pre_avg += n_correct / _i
+
+        return pre_avg / n
+
+
+def evaluate(num_users, train=True):
+    scores = []
+    # Test on all test users
+    print(f'Evaluating on {num_users} test users...')
+    with tt.no_grad():
+        brain.Q_eval.eval()
+        for u in range(num_users):
+            interview_score = 0
+            done = False
+            observation = env.choose_user(u, train=train)
+            while not done:
+                action = brain.choose_action(observation)
+                observation_, reward, done = env.step(action)
+                if done:
+                    interview_score = reward
+
+            scores.append(interview_score)
+
+        print(f'Test avg. interview score: {np.mean(scores)}')
+        return np.mean(scores)
 
 
 if __name__ == '__main__':
-    env = Environment()
-    brain = InterviewAgent(gamma=0.99, batch_size=64,
-                           n_movies=env.n_movies, n_entities=env.n_entities, alpha=0.003,
-                           epsilon=1.0, eps_dec=0.999, eps_end=0.1)
+    for n_questions in [1, 2, 3, 4, 5]:
+        n_questions = 1
+        env = Environment(interview_length=n_questions)
+        brain = InterviewAgent(gamma=0.99, batch_size=64,
+                               n_movies=env.n_movies, n_entities=env.n_entities, alpha=0.003,
+                               epsilon=1.0, eps_dec=0.999, eps_end=0.2)
 
-    scores = []
-    eps_history = []
-    num_games = 50000
-    score = 0
+        n_epochs = 5
+        num_train_users = env.n_train_users
+        num_test_users = env.n_test_users
 
-    for i in range(num_games):
-        if i % 10 == 0 and i > 0:
-            avg_score = np.mean(scores[max(0, i - 10):(i + 1)])
-            print('episode: ', i, 'score: ', score,
-                  ' average score %.3f' % avg_score,
-                  'epsilon %.3f' % brain.EPSILON)
-        else:
-            print('episode: ', i, 'score: ', score)
-        eps_history.append(brain.EPSILON)
-        done = False
-        observation = env.reset()
-        score = 0
-        while not done:
-            action = brain.choose_action(observation)
-            observation_, reward, done = env.step(action)
-            score += reward
-            brain.store_transition(observation, action, reward, observation_,
-                                  done)
-            observation = observation_
-            brain.learn()
+        epsilon_history = []
+        train_score_history = []
+        test_score_history = []
 
-        scores.append(score)
+        interview_scores = []
+        avg_interview_scores = []
 
-    x = [i + 1 for i in range(num_games)]
-    plotLearning(x, scores, eps_history)
+        n_interviews = 0
+
+        evaluate_at_every = 50
+
+        for epoch in range(n_epochs):
+            train_score = 0
+            test_score = 0
+
+            DataSet.shuffle(env.train_users)
+
+            # Train on all train users
+            print(f'Testing on {num_train_users} train users...')
+            for u in range(num_train_users):
+                brain.Q_eval.train()
+                done = False
+                interview_score = 0
+                observation = env.reset()
+                while not done:
+                    action = brain.choose_action(observation)
+                    observation_, reward, done = env.step(action)
+                    brain.store_transition(observation, action, reward, observation_,
+                                           done)
+                    observation = observation_
+                    if done:
+                        interview_score = reward
+                    brain.learn()
+
+                interview_scores.append(interview_score)
+                n_interviews += 1
+
+                if u % evaluate_at_every == 0 and u > 0:
+                    recent_avg_score = np.mean(interview_scores[-evaluate_at_every:])
+                    avg_interview_scores.append(recent_avg_score)
+                    epsilon_history.append(brain.EPSILON)
+
+                    print(f'{n_interviews} interviews, Epsilon: {brain.EPSILON}, avg. interview score: {recent_avg_score}')
+
+            train_score_history.append(evaluate(num_train_users, train=True))
+            test_score_history.append(evaluate(num_test_users, train=False))
+
+        with open(f'../results/{n_questions}Q.json', 'w') as fp:
+            json.dump({
+                'train': train_score_history,
+                'test': test_score_history,
+                'avg@50': avg_interview_scores,
+                'eps@50': epsilon_history
+            }, fp)
+
+        # x = [i + 1 for i in range(len(avg_interview_scores))]
+        # plot_learning(x, avg_interview_scores, epsilon_history)
+
+    # plotLearning(x, test_score_history, epsilon_history)
 
 #
 # if __name__ == '__main__':

@@ -10,6 +10,38 @@ DISLIKE = -1
 UNKNOWN = 0
 
 
+class UserStatic:
+    def __init__(self, idx, movie_ratings=[], entity_ratings=[]):
+        """
+        A user with answers.
+        Before an interview is started, you must start a user session
+        by calling .begin_interview()
+        """
+        self.idx = idx
+        self.movie_ratings = movie_ratings    # [(m_idx, r)]
+        self.entity_ratings = entity_ratings  # [(e_idx, r)]
+
+        self.movie_answers = []
+        self.entity_answers = []
+
+    def begin_interview(self):
+        self.movie_answers = {m: r for m, r in self.movie_ratings}
+        self.entity_answers = {e: r for e, r in self.entity_ratings}
+
+    def ask(self, o, interviewing=True):
+        answer = UNKNOWN
+        if o in self.movie_answers:
+            answer = self.movie_answers[o]
+            if interviewing:
+                del self.movie_answers[o]
+        elif o in self.entity_answers:
+            answer = self.entity_answers[o]
+            if interviewing:
+                del self.entity_answers[o]
+
+        return answer
+
+
 class User:
     def __init__(self, idx, movie_ratings=[], entity_ratings=[], split_ratio=0.75):
         """
@@ -66,11 +98,22 @@ class User:
 
 
 class DataSet:
-    def __init__(self, user_set, n_users, n_movies, n_entities):
+    def __init__(self, user_set, n_users, n_movies, n_entities,
+                 uid_idx_map, idx_uid_map,
+                 m_uri_idx_map, m_idx_uri_map,
+                 e_uri_idx_map, e_idx_uri_map):
         self.user_set = user_set
         self.n_users = n_users
         self.n_movies = n_movies
         self.n_entities = n_entities
+
+        # Set maps
+        self.uid_idx_map = uid_idx_map
+        self.idx_uid_map = idx_uid_map
+        self.m_uri_idx_map = m_uri_idx_map
+        self.m_idx_uri_map = m_idx_uri_map
+        self.e_uri_idx_map = e_uri_idx_map
+        self.e_idx_uri_map = e_idx_uri_map
 
     def split_users(self, split_ratio=0.75):
         return split(self.user_set, split_ratio=split_ratio)
@@ -78,7 +121,8 @@ class DataSet:
     @staticmethod
     def shuffle(user_set):
         shuffle(user_set)  # Shuffle the order of users
-        [u.shuffle() for u in user_set]  # Shuffle ratings for each user, generate new learning and test sets
+        # if shuffle_interview_sets:
+        #     [u.shuffle() for u in user_set]  # Shuffle ratings for each user, generate new learning and test sets
         return user_set
 
 
@@ -143,26 +187,44 @@ def generate_dataset(mindreader_dir='../data/mindreader', top_n=100):
     movie_ratings = [(uid, uri, r) for uid, uri, r in all_ratings if uri in top_movies]
     entity_ratings = [(uid, uri, r) for uid, uri, r in all_ratings if uri in top_entities]
 
-    # Map UIDs and URIs to indices
+    # Map UIDs and URIs to indices and back again
     uid_idx_map = {}
+    idx_uid_map = {}
+
     m_uri_idx_map = {}
+    m_idx_uri_map = {}
+
     e_uri_idx_map = {}
+    e_idx_uri_map = {}
     u, m, e = 0, 0, 0
 
     for uid, uri, r in movie_ratings:
         if uid not in uid_idx_map:
             uid_idx_map[uid] = u
+            idx_uid_map[u] = uid
             u += 1
         if uri not in m_uri_idx_map:
             m_uri_idx_map[uri] = m
+            m_idx_uri_map[m] = uri
             m += 1
     for uid, uri, r in entity_ratings:
         if uid not in uid_idx_map:
             uid_idx_map[uid] = u
+            idx_uid_map[u] = uid
             u += 1
         if uri not in e_uri_idx_map:
             e_uri_idx_map[uri] = e
+            e_idx_uri_map[e] = uri
             e += 1
+
+    # Entity URI/index maps are not corrected for movie indices, so correct that
+    _e_uri_idx_map = {}
+    _e_idx_uri_map = {}
+    for uri, idx in e_uri_idx_map.items():
+        _e_uri_idx_map[uri] = idx + m
+        _e_idx_uri_map[idx + m] = uri
+    e_uri_idx_map = _e_uri_idx_map
+    e_idx_uri_map = _e_idx_uri_map
 
     # Create indexed rating triples
     movie_ratings = [
@@ -172,13 +234,13 @@ def generate_dataset(mindreader_dir='../data/mindreader', top_n=100):
     ]
 
     entity_ratings = [
-        (uid_idx_map[uid], e_uri_idx_map[uri] + m, r)  # Add movie idx to convert to same index space
+        (uid_idx_map[uid], e_uri_idx_map[uri], r)
         for uid, uri, r
         in entity_ratings
     ]
 
     # Create the users
-    user_set = [User(idx) for idx in range(u)]
+    user_set = [UserStatic(idx) for idx in range(u)]
 
     # Assign ratings to users
     for u_idx, m_idx, r in movie_ratings:
@@ -187,7 +249,10 @@ def generate_dataset(mindreader_dir='../data/mindreader', top_n=100):
         user_set[u_idx].entity_ratings.append((e_idx, r))
 
     # Return the data set
-    return DataSet(user_set, u, m, e)
+    return DataSet(user_set, u, m, e,
+                   uid_idx_map, idx_uid_map,
+                   m_uri_idx_map, m_idx_uri_map,
+                   e_uri_idx_map, e_idx_uri_map)
 
 
 
