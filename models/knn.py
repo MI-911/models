@@ -45,7 +45,7 @@ def run():
     u_r_map, n_users, movie_idx, entity_idx = cold_start(
         from_path='../data/mindreader/user_ratings_map.json',
         conversion_map={
-            -1: 1,
+            -1: -1,
             0: None,
             1: 1
         },
