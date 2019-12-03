@@ -6,14 +6,14 @@ from scipy import spatial
 import numpy as np
 
 from utilities.metrics import ndcg_at_k, average_precision, hitrate
-from utilities.util import filter_min_k
+from utilities.util import filter_min_k, get_top_movies
 
 
 def similarity(a, b):
     return a.dot(b)
 
 
-def knn(user_vectors, user, own_vector):
+def knn(user_vectors, user, own_vector, neighbours):
     similarities = []
 
     for other, other_vector in user_vectors.items():
@@ -25,7 +25,7 @@ def knn(user_vectors, user, own_vector):
     # Shuffle s.t. any secondary ordering is random
     shuffle(similarities)
 
-    return sorted(similarities, key=lambda x: x[1], reverse=True)
+    return sorted(similarities, key=lambda x: x[1], reverse=True)[:neighbours]
 
 
 def predict_movies(idx_movie, u_r_map, neighbour_weights, exclude=None):
@@ -34,7 +34,7 @@ def predict_movies(idx_movie, u_r_map, neighbour_weights, exclude=None):
     for neighbour, weight in neighbour_weights:
         for movie, rating in u_r_map[neighbour]['movies']:
             movie_uri = idx_movie[movie]
-            movie_weight[movie_uri] = movie_weight.get(movie_uri, 0) + 1
+            movie_weight[movie_uri] = movie_weight.get(movie_uri, 0) + rating * weight
 
     # Get weighted prediction and exclude excluded URIs
     predictions = sorted(list(movie_weight.items()), key=lambda x: x[1], reverse=True)
@@ -45,8 +45,8 @@ def run():
     u_r_map, n_users, movie_idx, entity_idx = cold_start(
         from_path='../data/mindreader/user_ratings_map.json',
         conversion_map={
-            -1: 0,
-            0: None,  # Ignore don't know ratings
+            -1: 1,
+            0: None,
             1: 1
         },
         restrict_entities=None,
@@ -64,19 +64,23 @@ def run():
     idx_entity = {value: key for key, value in entity_idx.items()}
     idx_movie = {value: key for key, value in movie_idx.items()}
 
-    subsets = {'movies': idx_movie, 'entities': idx_entity}
+    subsets = {'movies': idx_movie, 'entities': idx_entity, 'popular': None}
     # Construct user vectors
     user_vectors = {}
     for user, ratings in u_r_map.items():
         user_vectors[user] = np.zeros(len(entity_idx))
 
         for subset, idx_lookup in subsets.items():
+            if not idx_lookup:
+                continue
+
             sampled = [(idx_lookup[idx], rating) for idx, rating in ratings[subset]]
 
             for uri, rating in sampled:
-                uri_idx = entity_idx[uri]
+                user_vectors[user][entity_idx[uri]] = rating
 
-                user_vectors[user][uri_idx] = rating
+    # Static, non-personalized measure of top movies
+    top_movies = get_top_movies(u_r_map, idx_movie)
 
     # Sample k movies and entities
     k = 10
@@ -90,7 +94,8 @@ def run():
         for user, ratings in filter_min_k(u_r_map, samples).items():
             subset_samples = {}
             for subset, idx_lookup in subsets.items():
-                subset_samples[subset] = [(idx_lookup[idx], rating) for idx, rating in sample(ratings[subset], samples)]
+                if idx_lookup:
+                    subset_samples[subset] = [(idx_lookup[idx], rating) for idx, rating in sample(ratings[subset], samples)]
 
             all_samples = set(itertools.chain.from_iterable(subset_samples.values()))
 
@@ -102,7 +107,13 @@ def run():
             left_out = choice(ground_truth)
 
             # Try both subsets
+            subset_predictions = dict()
             for subset, idx_lookup in subsets.items():
+                if subset == 'popular':
+                    subset_predictions[subset] = top_movies
+
+                    continue
+
                 sampled = subset_samples[subset]
 
                 own_vector = np.zeros(len(entity_idx))
@@ -110,10 +121,12 @@ def run():
                     own_vector[entity_idx[uri]] = rating
 
                 # Get neighbours and make predictions
-                neighbour_weights = knn(user_vectors, user, own_vector)
+                neighbour_weights = knn(user_vectors, user, own_vector, neighbours=15)
                 predictions = predict_movies(idx_movie, u_r_map, neighbour_weights, exclude=[h for h, _ in sampled])
+                subset_predictions[subset] = predictions
 
-                # Add to metrics
+            # Metrics
+            for subset, predictions in subset_predictions.items():
                 subset_aps[subset] += average_precision(ground_truth, predictions, k=k)
                 subset_hits[subset] += hitrate(left_out, predictions, k=k)
                 subset_ndcg[subset] += ndcg_at_k(ground_truth, predictions, k=k)
