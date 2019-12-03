@@ -14,6 +14,7 @@ from utilities.util import filter_min_k
 def get_model(entity_len, movie_dim):
     model = Sequential()
     model.add(Dense(256, input_dim=entity_len, activation='relu'))
+    model.add(Dropout(0.1))
     model.add(Dense(128, activation='relu'))
     model.add(Dense(64, activation='relu'))
     model.add(Dense(movie_dim, activation='tanh'))
@@ -80,32 +81,31 @@ def run():
                 continue
 
             # Create target
-            # y = np.zeros(len(movie_idx))
+            y = np.zeros(len(movie_idx))
             for idx, rating in predict:
-                y = np.zeros(len(movie_idx))
                 y[idx] = rating
 
-                # Create input
-                lookups = {
-                    'movies': {
-                        'samples': sampled_movies,
-                        'lookup': idx_movie
-                    },
-                    'entities': {
-                        'samples': sampled_entities,
-                        'lookup': idx_entity
-                    }
+            # Create input
+            lookups = {
+                'movies': {
+                    'samples': sampled_movies,
+                    'lookup': idx_movie
+                },
+                'entities': {
+                    'samples': sampled_entities,
+                    'lookup': idx_entity
                 }
+            }
 
-                x = np.zeros(len(entity_idx))
-                for category, lookup in lookups.items():
-                    for sample_idx, rating in lookup['samples']:
-                        idx = entity_idx[lookup['lookup'][sample_idx]]
+            x = np.zeros(len(entity_idx))
+            for category, lookup in lookups.items():
+                for sample_idx, rating in lookup['samples']:
+                    idx = entity_idx[lookup['lookup'][sample_idx]]
 
-                        x[idx] = rating
+                    x[idx] = rating
 
-                train_x.append(x)
-                train_y.append(y)
+            train_x.append(x)
+            train_y.append(y)
 
     # Train model
     model = get_model(len(entity_idx), len(movie_idx))
@@ -128,7 +128,7 @@ def run():
             print(f'Validation hitrate: {(hits / len(y_val)) * 100}%')
 
     model.compile(optimizer='adam', loss='mean_squared_error')
-    model.fit(np.asarray(train_x), np.asarray(train_y), epochs=50, batch_size=8, verbose=False, validation_split=0.15,
+    model.fit(np.asarray(train_x), np.asarray(train_y), epochs=50, batch_size=16, verbose=False, validation_split=0.15,
               callbacks=[Metrics()])
 
     # Smoke test
