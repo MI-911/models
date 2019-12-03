@@ -6,7 +6,7 @@ from scipy import spatial
 import numpy as np
 
 from utilities.metrics import ndcg_at_k, average_precision, hitrate
-from utilities.util import filter_min_k, get_top_movies
+from utilities.util import filter_min_k, get_top_movies, get_entity_occurrence, prune_low_occurrence
 
 
 def similarity(a, b):
@@ -64,9 +64,13 @@ def run():
     idx_entity = {value: key for key, value in entity_idx.items()}
     idx_movie = {value: key for key, value in movie_idx.items()}
 
-    subsets = {'movies': idx_movie, 'entities': idx_entity, 'popular': None}
+    # Filter entities with only one occurrence
+    entity_occurrence = get_entity_occurrence(u_r_map, idx_entity, idx_movie)
+    u_r_map = prune_low_occurrence(u_r_map, idx_entity, idx_movie, entity_occurrence)
+
     # Construct user vectors
     user_vectors = {}
+    subsets = {'movies': idx_movie, 'entities': idx_entity, 'popular': None}
     for user, ratings in u_r_map.items():
         user_vectors[user] = np.zeros(len(entity_idx))
 
@@ -84,7 +88,7 @@ def run():
 
     # Sample k movies and entities
     k = 10
-    for samples in range(1, 11):
+    for samples in range(1, 6):
         subset_hits = {subset: 0 for subset in subsets}
         subset_aps = {subset: 0 for subset in subsets}
         subset_ndcg = {subset: 0 for subset in subsets}
@@ -121,7 +125,7 @@ def run():
                     own_vector[entity_idx[uri]] = rating
 
                 # Get neighbours and make predictions
-                neighbour_weights = knn(user_vectors, user, own_vector, neighbours=15)
+                neighbour_weights = knn(user_vectors, user, own_vector, neighbours=5)
                 predictions = predict_movies(idx_movie, u_r_map, neighbour_weights, exclude=[h for h, _ in sampled])
                 subset_predictions[subset] = predictions
 

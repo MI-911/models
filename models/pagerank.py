@@ -2,15 +2,12 @@ from random import sample, choice
 
 from networkx import pagerank_scipy, Graph
 
-from data.graph_loader import load_graph
 from data.training import cold_start
-import numpy as np
-
-from utilities.metrics import average_precision, hitrate
-from utilities.util import get_top_movies, filter_min_k
+from utilities.metrics import average_precision, hitrate, ndcg_at_k
+from utilities.util import get_top_movies, filter_min_k, get_entity_occurrence, prune_low_occurrence
 
 
-def personalized_pagerank(G, movies=None, entities=None, alpha=0.75):
+def personalized_pagerank(G, movies=None, entities=None, alpha=0.85):
     if not movies:
         return []
 
@@ -59,7 +56,7 @@ def run():
             0: None,  # Ignore don't know ratings
             1: 1
         },
-        restrict_entities=['Person'],
+        restrict_entities=None,
         split_ratio=[100, 0]
     )
 
@@ -79,23 +76,9 @@ def run():
             uri = idx_entity[idx]
             entity_frequency[uri] = entity_frequency.get(uri, 0) + 1
 
-    # Remove entities that are only observed once
-    for user, ratings in u_r_map.items():
-        new_movies, new_entities = [], []
-
-        for idx, rating in ratings['movies']:
-            if entity_frequency[idx_movie[idx]] > 1:
-                new_movies.append((idx, rating))
-            else:
-                print(f'Bye {idx_movie[idx]}')
-
-        for idx, rating in ratings['entities']:
-            if entity_frequency[idx_entity[idx]] > 1:
-                new_entities.append((idx, rating))
-            else:
-                print(f'Bye {idx_entity[idx]}')
-
-        u_r_map[user] = {'movies': new_movies, 'entities': new_entities}
+    # Filter entities with only one occurrence
+    entity_occurrence = get_entity_occurrence(u_r_map, idx_entity, idx_movie)
+    u_r_map = prune_low_occurrence(u_r_map, idx_entity, idx_movie, entity_occurrence)
 
     # Static, non-personalized measure of top movies
     top_movies = get_top_movies(u_r_map, idx_movie)
@@ -112,6 +95,10 @@ def run():
         hits_popular = 0
         hits_entity = 0
         hits_movie = 0
+
+        sum_popular_ndcg = 0
+        sum_entity_ndcg = 0
+        sum_movie_ndcg = 0
 
         for user, ratings in filter_min_k(u_r_map, samples).items():
             # Sample k entities
@@ -131,17 +118,22 @@ def run():
             if ground_truth:
                 # Predict liked movies guessed on entities and movies
                 entity_prediction = personalized_pagerank(G, all_movies, sampled_entities)
-                # movie_prediction = personalized_pagerank(G, all_movies, sampled_movies)
+                movie_prediction = personalized_pagerank(G, all_movies, sampled_movies)
 
                 # Get average precisions
                 sum_popular_ap += average_precision(ground_truth, top_movies, k)
                 sum_entity_ap += average_precision(ground_truth, entity_prediction, k)
-                # sum_movie_ap += average_precision(ground_truth, movie_prediction)
+                sum_movie_ap += average_precision(ground_truth, movie_prediction, k)
 
                 # Get hit-rates
                 hits_popular += hitrate(left_out, top_movies, k)
                 hits_entity += hitrate(left_out, entity_prediction, k)
-                # hits_movie += hitrate(left_out, movie_prediction)
+                hits_movie += hitrate(left_out, movie_prediction, k)
+
+                # Get NDCGs
+                sum_popular_ndcg += ndcg_at_k(ground_truth, top_movies, k)
+                sum_entity_ndcg += ndcg_at_k(ground_truth, entity_prediction, k)
+                sum_movie_ndcg += ndcg_at_k(ground_truth, movie_prediction, k)
 
                 count += 1
 
@@ -149,6 +141,11 @@ def run():
         print(f'Popular MAP: {sum_popular_ap / count}')
         print(f'Entity MAP: {sum_entity_ap / count}')
         print(f'Movie MAP: {sum_movie_ap / count}')
+        print()
+
+        print(f'Popular NDCG: {sum_popular_ndcg / count}')
+        print(f'Entity NDCG: {sum_entity_ndcg / count}')
+        print(f'Movie NDCG: {sum_movie_ndcg / count}')
         print()
 
         print(f'Popular hit-rate: {hits_popular / count}')

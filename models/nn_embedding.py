@@ -1,4 +1,5 @@
 import json
+import random
 from random import shuffle, sample, choice
 
 import keras
@@ -9,15 +10,14 @@ from data.training import cold_start
 import numpy as np
 
 from utilities.metrics import average_precision, hitrate, ndcg_at_k
-from utilities.util import filter_min_k, get_top_movies
+from utilities.util import filter_min_k, get_top_movies, get_entity_occurrence, prune_low_occurrence
 
 
 def get_model(entity_len, movie_dim):
     model = Sequential()
 
-    model.add(Dense(256, input_dim=entity_len, activation='tanh'))
-    model.add(Dropout(0.1))
-    model.add(Dense(128, activation='tanh'))
+    model.add(Dense(32, input_dim=entity_len, activation='tanh'))
+    model.add(Dense(16, activation='tanh'))
     model.add(Dense(movie_dim, activation='tanh'))
 
     print(model.summary())
@@ -32,15 +32,16 @@ def min_k(users, k):
 def run():
     like_signal = 1
     dislike_signal = -1
+    unknown_signal = None
 
     u_r_map, n_users, movie_idx, entity_idx = cold_start(
         conversion_map={
             -1: dislike_signal,
-            0: None,
+            0: unknown_signal,
             1: like_signal
         },
         restrict_entities=None,
-        split_ratio=[100, 0]
+        split_ratio=[75, 25]
     )
 
     # Get entities
@@ -61,24 +62,16 @@ def run():
     idx_entity = {value: key for key, value in entity_idx.items()}
     idx_movie = {value: key for key, value in movie_idx.items()}
 
-    # Split users into train and test
-    all_users = list(u_r_map.items())
-    shuffle(all_users)
-
-    split_index = int(0.75 * len(all_users))
-    train_users = all_users[:split_index]
-    test_users = all_users[split_index:]
+    # Filter entities with only one occurrence
+    entity_occurrence = get_entity_occurrence(u_r_map, idx_entity, idx_movie)
+    u_r_map = prune_low_occurrence(u_r_map, idx_entity, idx_movie, entity_occurrence)
 
     # Generate training data
     train_x = []
     train_y = []
 
-    for samples in range(1, 11):
-        filtered = min_k(train_users, samples)
-        if not filtered:
-            break
-
-        for user, ratings in min_k(train_users, samples):
+    for samples in range(1, 21):
+        for user, ratings in filter_min_k(u_r_map, samples).items():
             sampled_entities = sample(ratings['entities'], samples)
             sampled_movies = sample(ratings['movies'], samples)
             predict = [(movie, rating) for movie, rating in ratings['movies'] if (movie, rating) not in sampled_movies]
@@ -135,16 +128,8 @@ def run():
             print(f'Validation hitrate: {(hits / len(y_val)) * 100}%')
 
     model.compile(optimizer='adam', loss='mean_squared_error')
-    model.fit(np.asarray(train_x), np.asarray(train_y), epochs=50, batch_size=32, verbose=False, validation_split=0.15,
+    model.fit(np.asarray(train_x), np.asarray(train_y), epochs=50, batch_size=8, verbose=False, validation_split=0.15,
               callbacks=[Metrics()])
-
-    # Take 25% of test users' liked movies as test
-    for user, ratings in test_users:
-        liked_movies = [(movie, rating) for movie, rating in ratings['movies'] if rating == like_signal]
-        ratings['test'] = liked_movies[:int(len(liked_movies) * 0.75)]
-
-        # Exclude test from seed movies
-        ratings['movies'] = [(movie, rating) for movie, rating in ratings['movies'] if (movie, rating) not in ratings['test']]
 
     # Static, non-personalized measure of top movies
     top_movies = get_top_movies(u_r_map, idx_movie)
@@ -153,7 +138,7 @@ def run():
     subsets = {'entities': idx_entity, 'movies': idx_movie, 'popular': None}
     k = 10
     for samples in range(1, 6):
-        filtered = min_k(test_users, samples)
+        filtered = filter_min_k(u_r_map, samples)
         if not filtered:
             break
 
@@ -162,11 +147,11 @@ def run():
         subset_ndcg = {subset: 0 for subset in subsets}
         count = 0
 
-        for user, ratings in filtered:
-            if not ratings['test']:
+        for user, ratings in filtered.items():
+            ground_truth = [idx_movie[idx] for idx, rating in ratings['test'] if rating == like_signal]
+            if not ground_truth:
                 continue
 
-            ground_truth = [idx_movie[idx] for idx, _ in ratings['test']]
             left_out = choice(ground_truth)
 
             subset_samples = {subset: sample(ratings[subset], samples) for subset in subsets if subset != 'popular'}
@@ -188,6 +173,7 @@ def run():
                     x[entity_idx[uri]] = rating
 
                 prediction = [idx_movie[pred_idx] for pred_idx in model.predict(np.array([x])).argsort()[0][::-1]]
+
                 subset_predictions[subset] = prediction
 
             # Metrics
