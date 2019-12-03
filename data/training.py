@@ -112,7 +112,7 @@ def warm_start(
     return train, test, uc, mc, ec
 
 
-def cold_start(from_path='../data/user_ratings_map.json', entities_path='../data/mindreader/entities_clean.json',
+def cold_start(from_path='data/mindreader/user_ratings_map.json', entities_path='data/mindreader/entities_clean.json',
                conversion_map=None, restrict_entities=None, split_ratio=[75, 25]):
     """
     Converts UIDs and URIs to indices as returns the ratings

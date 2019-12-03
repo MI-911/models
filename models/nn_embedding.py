@@ -13,10 +13,9 @@ from utilities.util import filter_min_k
 
 def get_model(entity_len, movie_dim):
     model = Sequential()
-    model.add(Dense(256, input_dim=entity_len, activation='relu'))
+    model.add(Dense(512, input_dim=entity_len))
     model.add(Dropout(0.1))
-    model.add(Dense(128, activation='relu'))
-    model.add(Dense(64, activation='relu'))
+    model.add(Dense(256, input_dim=entity_len))
     model.add(Dense(movie_dim, activation='tanh'))
 
     print(model.summary())
@@ -29,19 +28,21 @@ def min_k(users, k):
 
 
 def run():
+    like_signal = 1
+    dislike_signal = -1
+
     u_r_map, n_users, movie_idx, entity_idx = cold_start(
-        from_path='../data/mindreader/user_ratings_map.json',
         conversion_map={
-            -1: -1,
+            -1: dislike_signal,
             0: None,
-            1: 1
+            1: like_signal
         },
         restrict_entities=None,
         split_ratio=[100, 0]
     )
 
     # Get entities
-    with open('../data/mindreader/entities_clean.json') as fp:
+    with open('data/mindreader/entities_clean.json') as fp:
         entities = dict()
 
         for uri, name, labels in json.load(fp):
@@ -71,6 +72,10 @@ def run():
     train_y = []
 
     for samples in range(1, 11):
+        filtered = min_k(train_users, samples)
+        if not filtered:
+            break
+
         for user, ratings in min_k(train_users, samples):
             sampled_entities = sample(ratings['entities'], samples)
             sampled_movies = sample(ratings['movies'], samples)
@@ -128,8 +133,19 @@ def run():
             print(f'Validation hitrate: {(hits / len(y_val)) * 100}%')
 
     model.compile(optimizer='adam', loss='mean_squared_error')
-    model.fit(np.asarray(train_x), np.asarray(train_y), epochs=50, batch_size=16, verbose=False, validation_split=0.15,
+    model.fit(np.asarray(train_x), np.asarray(train_y), epochs=50, batch_size=32, verbose=False, validation_split=0.15,
               callbacks=[Metrics()])
+
+    # Take 25% of test users' liked movies as test
+    for user, ratings in test_users:
+        print(f'b4 {len(ratings["movies"])}')
+        liked_movies = [movie for movie, rating in ratings['movies'] if rating == like_signal]
+        ratings['test'] = liked_movies[:int(len(liked_movies) * 0.75)]
+
+        # Exclude test from seed movies
+        ratings['movies'] = [movie for movie, rating in ratings['movies'] if movie not in ratings['test']]
+
+    # Test with different samples
 
     # Smoke test
     while True:
