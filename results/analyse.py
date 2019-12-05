@@ -13,7 +13,7 @@ if __name__ == '__main__':
     f_names = ['1Q.json', '2Q.json', '3Q.json', '4Q.json', '5Q.json']
 
     for i, f_name in enumerate(f_names, start=1):
-        with open(f'{f_name}') as fp:
+        with open(f'50_epochs_top_100/{f_name}') as fp:
             data = json.load(fp)
 
         train_ap = data['train']

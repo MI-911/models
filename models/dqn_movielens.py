@@ -6,7 +6,7 @@ import numpy as np
 
 
 class DeepQInterView(nn.Module):
-    def __init__(self, alpha, n_entities, fc1_dims, fc2_dims):
+    def __init__(self, alpha, n_entities, fc1_dims, fc2_dims, fc3_dims):
         super(DeepQInterView, self).__init__()
 
         self.alpha = alpha
@@ -14,7 +14,8 @@ class DeepQInterView(nn.Module):
 
         self.answer_layer = nn.Linear(n_entities * 2, fc1_dims)
         self.fc1 = nn.Linear(fc1_dims, fc2_dims)
-        self.question_layer = nn.Linear(fc2_dims, n_entities)
+        self.fc2 = nn.Linear(fc2_dims, fc3_dims)
+        self.question_layer = nn.Linear(fc3_dims, n_entities)
 
         self.optimizer = optim.Adam(self.parameters(), lr=alpha)
         self.loss = nn.MSELoss()
@@ -24,8 +25,10 @@ class DeepQInterView(nn.Module):
 
     def forward(self, observation):
         state = tt.from_numpy(observation).to(tt.float).to(self.device)
-        x = tt.tanh(self.answer_layer(state))
-        x = tt.tanh(self.fc1(x))
+
+        x = tt.relu(self.answer_layer(state))
+        x = tt.relu(self.fc1(x))
+        x = tt.relu(self.fc2(x))
         x = tt.sigmoid(self.question_layer(x))
 
         return x
@@ -45,9 +48,9 @@ class InterviewAgent:
         self.mem_size = max_mem_size
         self.batch_size = batch_size
         self.mem_counter = 0
-        self.Q_eval = DeepQInterView(alpha, n_entities=self.question_dim, fc1_dims=256, fc2_dims=256)
+        self.Q_eval = DeepQInterView(alpha, n_entities=self.question_dim, fc1_dims=256, fc2_dims=128, fc3_dims=64)
 
-        self.Q_eval_prime = DeepQInterView(alpha, n_entities=self.question_dim, fc1_dims=256, fc2_dims=256)
+        self.Q_eval_prime = DeepQInterView(alpha, n_entities=self.question_dim, fc1_dims=256, fc2_dims=128, fc3_dims=64)
         self.Q_eval_prime.load_state_dict(self.Q_eval.state_dict())
         self.Q_eval_prime.eval()
 

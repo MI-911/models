@@ -228,7 +228,7 @@ def generate_movielens_dataset(movielens_dir='../data/movielens-100k/ratings.csv
 
     # Filter out users with < 5 ratings on the top-100 movies
     sorted_u_counts = list(sorted(u_counts.items(), key=lambda x: x[1], reverse=True))
-    top_us = [u for u, c in sorted_u_counts if c >= 5]
+    top_us = [u for u, c in sorted_u_counts if c >= 10]
 
     all_ratings = [(u, m, r) for u, m, r in all_ratings if u in top_us]
 

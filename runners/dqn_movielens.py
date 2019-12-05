@@ -168,13 +168,14 @@ def evaluate(num_users, train=True):
 
 
 if __name__ == '__main__':
+    env = Environment(interview_length=0)
     for n_questions in [1, 2, 3, 4, 5]:
-        env = Environment(interview_length=n_questions)
+        env.interview_length = n_questions
         brain = InterviewAgent(gamma=0.99, batch_size=24,
                                n_movies=env.n_movies, alpha=0.003,
-                               epsilon=1.0, eps_dec=0.999, eps_end=0.2)
+                               epsilon=1.0, eps_dec=0.999, eps_end=0.05)
 
-        n_epochs = 5
+        n_epochs = 50
         num_train_users = env.n_train_users
         num_test_users = env.n_test_users
 
@@ -204,17 +205,42 @@ if __name__ == '__main__':
                 interview_score = 0
                 observation = env.reset()
                 previous_questions = []
-                while not done:
+                transitions = []
+
+                for i in range(n_questions):
+                    state = env.state.copy()
                     action = brain.choose_action(observation)
-                    observation_, reward, done = env.step(action)
-                    if action in previous_questions:
-                        reward = 0  # Don't ask the same question again and again
-                    brain.store_transition(observation, action, reward, observation_,
-                                           done)
-                    observation = observation_
-                    previous_questions.append(action)
-                    if done:
-                        interview_score = reward
+                    answer = env.current_user.ask(action)
+                    action_index = action * 2
+                    env.state[action_index] = 1
+                    env.state[action_index + 1] = answer
+                    new_state = env.state.copy()
+                    done = i == n_questions - 1
+                    transitions.append([state, action, new_state, done])
+
+                # Done, get a reward for the interview
+                final_reward = env._calculate_reward(top_n=20)
+                for state, action, new_state, done in transitions:
+                    brain.store_transition(state, action, final_reward / n_questions, new_state, done)
+
+                interview_scores.append(final_reward)
+
+                #
+                #
+                #
+                #
+                #
+                # while not done:
+                #     action = brain.choose_action(observation)
+                #     observation_, reward, done = env.step(action)
+                #     if action in previous_questions:
+                #         reward = 0  # Don't ask the same question again and again
+                #     brain.store_transition(observation, action, reward, observation_,
+                #                            done)
+                #     observation = observation_
+                #     previous_questions.append(action)
+                #     if done:
+                #         interview_score = reward
                 loss = brain.learn()
                 if loss is not None:
                     loss = loss.cpu().detach().numpy().sum()
@@ -234,7 +260,7 @@ if __name__ == '__main__':
             train_score_history.append(evaluate(num_train_users, train=True))
             test_score_history.append(evaluate(num_test_users, train=False))
 
-        with open(f'../results/{n_questions}Q.json', 'w') as fp:
+        with open(f'../results/{n_epochs}_epochs_top_100/{n_questions}Q.json', 'w') as fp:
             json.dump({
                 'losses': training_losses,
                 'train': train_score_history,
