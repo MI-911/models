@@ -10,6 +10,33 @@ DISLIKE = -1
 UNKNOWN = 0
 
 
+class MovieLensUser:
+    def __init__(self, idx):
+        self.idx = idx
+        self.movie_ratings = []
+        self.movie_interview_answers = None
+        self.movie_post_interview_answers = None
+
+    def split(self):
+        # 75% of answers for the interview, 25% for the evaluation
+        split_idx = int(len(self.movie_ratings) * 0.75)
+        interview_ratings = self.movie_ratings[:split_idx]
+        post_interview_ratings = self.movie_ratings[split_idx:]
+        self.movie_interview_answers = {m: r for m, r in interview_ratings}
+        self.movie_post_interview_answers = {m: r for m, r in post_interview_ratings}
+
+    def ask(self, movie, interviewing=True):
+        answer = UNKNOWN
+        if interviewing:
+            if movie in self.movie_interview_answers:
+                answer = self.movie_interview_answers[movie]
+        else:
+            if movie in self.movie_post_interview_answers:
+                answer = self.movie_post_interview_answers[movie]
+
+        return answer
+
+
 class UserStatic:
     def __init__(self, idx, movie_ratings=[], entity_ratings=[]):
         """
@@ -97,6 +124,23 @@ class User:
         self.e_test_answers = {}
 
 
+class MovieLensDataSet:
+    def __init__(self, user_set, n_users, n_movies):
+        self.user_set = user_set
+        self.n_users = n_users
+        self.n_movies = n_movies
+
+    def split_users(self, split_ratio=0.75):
+        return split(self.user_set, split_ratio=split_ratio)
+
+    @staticmethod
+    def shuffle(user_set):
+        shuffle(user_set)  # Shuffle the order of users
+        # if shuffle_interview_sets:
+        #     [u.shuffle() for u in user_set]  # Shuffle ratings for each user, generate new learning and test sets
+        return user_set
+
+
 class DataSet:
     def __init__(self, user_set, n_users, n_movies, n_entities,
                  uid_idx_map, idx_uid_map,
@@ -155,6 +199,66 @@ def split(lst, split_ratio=0.75):
     lst2 = lst[split_index:]
 
     return lst1, lst2
+
+
+def generate_movielens_dataset(movielens_dir='../data/movielens-100k/ratings.csv', top_n=100, rating_converter=None):
+    with open(movielens_dir) as fp:
+        df = pd.read_csv(fp)
+
+    all_ratings = [(int(uid), int(mid), int(r)) for uid, mid, r in df[['userId', 'movieId', 'rating']].values]
+
+    # Count ratings for each movie
+    m_counts = {}
+    for _, m, _ in all_ratings:
+        if m not in m_counts:
+            m_counts[m] = 0
+        m_counts[m] += 1
+
+    # Filter out ratings that are not for the top-n rated movies
+    sorted_m_counts = list(sorted(m_counts.items(), key=lambda x: x[1], reverse=True))
+    top_n_ms = [m for m, c in sorted_m_counts[:top_n]]
+    all_ratings = [(uid, mid, r) for uid, mid, r in all_ratings if mid in top_n_ms]
+
+    # Count ratings for each user
+    u_counts = {}
+    for u, _, _ in all_ratings:
+        if u not in u_counts:
+            u_counts[u] = 0
+        u_counts[u] += 1
+
+    # Filter out users with < 5 ratings on the top-100 movies
+    sorted_u_counts = list(sorted(u_counts.items(), key=lambda x: x[1], reverse=True))
+    top_us = [u for u, c in sorted_u_counts if c >= 5]
+
+    all_ratings = [(u, m, r) for u, m, r in all_ratings if u in top_us]
+
+    uid_idx_map, uc = {}, 0
+    mid_idx_map, mc = {}, 0
+    user_ratings_map = {}
+
+    for uid, mid, r in all_ratings:
+        if uid not in uid_idx_map:
+            uid_idx_map[uid] = uc
+            uc += 1
+        if mid not in mid_idx_map:
+            mid_idx_map[mid] = mc
+            mc += 1
+        uid = uid_idx_map[uid]
+        mid = mid_idx_map[mid]
+
+        if uid not in user_ratings_map:
+            user_ratings_map[uid] = []
+
+        if rating_converter is not None:
+            r = rating_converter(r)
+
+        user_ratings_map[uid].append((mid, r))
+
+    users = [MovieLensUser(i) for i in user_ratings_map.keys()]
+    for u, ratings in user_ratings_map.items():
+        users[u].movie_ratings = ratings
+
+    return MovieLensDataSet(users, uc, mc)
 
 
 def generate_dataset(mindreader_dir='../data/mindreader', top_n=100):

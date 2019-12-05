@@ -19,16 +19,15 @@ class DeepQInterView(nn.Module):
         self.optimizer = optim.Adam(self.parameters(), lr=alpha)
         self.loss = nn.MSELoss()
 
-        self.device = T.device('cuda:0' if T.cuda.is_available() else 'cpu')
+        self.device = T.device('cuda' if T.cuda.is_available() else 'cpu')
         self.to(self.device)
 
     def forward(self, observation):
-        state = T.from_numpy(observation).to(T.float).to(self.Q_eval.device)
+        state = T.from_numpy(observation).to(T.float).to(self.device)
         x = T.tanh(self.answer_layer(state))
         x = T.tanh(self.fc1(x))
         x = T.sigmoid(self.question_layer(x))
 
-        # q = (x == x.max(dim=1, keepdim=True)[0]).to(T.float)
         return x
 
 
@@ -73,11 +72,16 @@ class InterviewAgent:
         self.mem_counter = 0
         self.Q_eval = DeepQInterView(alpha, n_entities=self.question_dim, fc1_dims=256, fc2_dims=256)
 
+        self.Q_eval_prime = DeepQInterView(alpha, n_entities=self.question_dim, fc1_dims=256, fc2_dims=256)
+        self.Q_eval_prime.load_state_dict(self.Q_eval.state_dict())
+        self.Q_eval_prime.eval()
+
         self.state_memory = np.zeros((self.mem_size, self.answer_dim), dtype=np.float32)
         self.new_state_memory = np.zeros((self.mem_size, self.answer_dim), dtype=np.float32)
         self.action_memory = np.zeros((self.mem_size, self.question_dim), dtype=np.uint8)
         self.reward_memory = np.zeros(self.mem_size, dtype=np.float32)
         self.terminal_memory = np.zeros(self.mem_size, dtype=np.float32)
+        self.update_counter = 0
 
     def store_transition(self, state, action, reward, new_state, terminal):
         index = self.mem_counter % self.mem_size
@@ -106,6 +110,10 @@ class InterviewAgent:
             max_mem = self.mem_counter if self.mem_counter < self.mem_size \
                 else self.mem_size
 
+            if self.update_counter % 150 == 0:
+                print(f'Updating Q\'...')
+                self.Q_eval_prime.load_state_dict(self.Q_eval.state_dict())
+
             batch = np.random.choice(max_mem, self.batch_size)
             state_batch = self.state_memory[batch]
             action_batch = self.action_memory[batch]
@@ -119,7 +127,7 @@ class InterviewAgent:
             terminal_batch = T.tensor(terminal_batch).to(self.Q_eval.device)
 
             q_eval = self.Q_eval(state_batch).to(self.Q_eval.device)
-            q_target = q_eval.clone()
+            q_target = self.Q_eval_prime(state_batch).to(self.Q_eval.device).detach()
             q_next = self.Q_eval(new_state_batch).to(self.Q_eval.device)
 
             batch_index = np.arange(self.batch_size, dtype=np.int32)
@@ -133,7 +141,15 @@ class InterviewAgent:
 
             loss = self.Q_eval.loss(q_eval, q_target).to(self.Q_eval.device)
             loss.backward()
+
+            # Clip the gradients
+            for param in self.Q_eval.parameters():
+                param.grad.data.clamp_(-1, 1)
+
             self.Q_eval.optimizer.step()
+            self.update_counter += 1
+
+            return loss
 
 
 class Agent(object):

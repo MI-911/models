@@ -1,33 +1,43 @@
 import gym
-from models.dqn import DeepQInterView, InterviewAgent
+from models.dqn_movielens import DeepQInterView, InterviewAgent
 from utilities.util import plot_learning
 import numpy as np
 from gym import wrappers
-from data.cold_start import generate_dataset, DataSet
-from data.graph_loader import KnowledgeGraph
+from data.cold_start import generate_movielens_dataset, MovieLensDataSet
+from data.graph_loader import CollaborativeKnowledgeGraph
 import torch as tt
 import sys
 import json
 
 
+LIKED = 1
+DISLIKED = -1
+
+
+def convert_movielens_rating(r):
+    if r > 3:
+        return LIKED
+    return DISLIKED
+
+
 class Environment:
     def __init__(self, interview_length=3):
-        self.data_set = generate_dataset(
-            mindreader_dir='../data/mindreader',
-            top_n=100
-        )
+        self.data_set = generate_movielens_dataset(
+            movielens_dir='../data/movielens/ratings.csv',
+            top_n=100,
+            rating_converter=convert_movielens_rating)
 
         # 1. Load the users
         self.train_users, self.test_users = self.data_set.split_users(split_ratio=0.75)
-        self.train_users = DataSet.shuffle(self.train_users)
-        self.test_users = DataSet.shuffle(self.test_users)
+        self.train_users = MovieLensDataSet.shuffle(self.train_users)
+        self.test_users = MovieLensDataSet.shuffle(self.test_users)
 
-        # 2. Load the KG
-        movie_uris = list(self.data_set.m_uri_idx_map.keys())
-        entity_uris = list(self.data_set.e_uri_idx_map.keys())
-        self.KG = KnowledgeGraph.load_from_triples(
-            graph_path='../data/graph/triples.csv',
-            restrict_nodes=movie_uris + entity_uris)
+        # 2. Load the collaborative KG
+        self.KG = CollaborativeKnowledgeGraph.load_from_users(
+            user_set=self.train_users,
+            liked_value=LIKED,
+            disliked_value=DISLIKED
+        )
 
         # 3. Set the current user
         self.current_user = None
@@ -37,8 +47,7 @@ class Environment:
 
         # 4. Set the state
         self.n_movies = self.data_set.n_movies
-        self.n_entities = self.data_set.n_entities
-        self.state_size = (self.n_movies + self.n_entities) * 2  # One for each question/answer pair.
+        self.state_size = self.n_movies * 2  # One for each question/answer pair.
         self.state = np.zeros(self.state_size)
 
         # 5. Other info
@@ -47,9 +56,10 @@ class Environment:
         self.evaluation = False
 
     def choose_user(self, u_idx, train=True):
+        # Manually choose a user and reset the state
         self.evaluation = not train
         self.current_user = self.train_users[u_idx] if train else self.test_users[u_idx]
-        self.current_user.begin_interview()
+        self.current_user.split()
         self.state = np.zeros(self.state_size)
         self.current_interview_length = 0
 
@@ -59,7 +69,7 @@ class Environment:
         # Choose a new user
         current_user_idx = self.user_counter % self.n_train_users
         self.current_user = self.train_users[current_user_idx]
-        self.current_user.begin_interview()
+        self.current_user.split()  # Initialise fresh answer sets
         self.user_counter += 1
 
         # Reset state
@@ -77,7 +87,7 @@ class Environment:
         answer = self.current_user.ask(q, interviewing=True)
         self.current_interview_length += 1
 
-        # Update the state
+        # Update the state, doubling the movie index
         q = q * 2
         self.state[q] = 1
         self.state[q + 1] = answer
@@ -96,8 +106,8 @@ class Environment:
         # The reward is the average precision of the top-20.
 
         # 1. Extract the liked and disliked entities
-        liked = np.where(self.state == 1)[0]
-        disliked = np.where(self.state == -1)[0]
+        liked = np.where(self.state == LIKED)[0]
+        disliked = np.where(self.state == DISLIKED)[0]
         # 1.1 The uneven indices are the ones containing ratings.
         #     Also, they are spread in doubled length to contain answers.
         #     For these items:
@@ -107,35 +117,13 @@ class Environment:
         #     So for every rating, find its doubled item index and
         #     halve it.
         liked = [(_i - 1) / 2 for _i in liked if not _i % 2 == 0]
-        disliked = [(_i - 1) / 2 for _i in disliked if not _i % 2 == 0]
+        # disliked = [(_i - 1) / 2 for _i in disliked if not _i % 2 == 0]
 
-        # 2. Convert indices to URIs
-        def convert(idx):
-            if idx in self.data_set.m_idx_uri_map:
-                return self.data_set.m_idx_uri_map[idx]
-            else:
-                return self.data_set.e_idx_uri_map[idx]
+        # 2. Pass to PPR, take the top 20
+        top_n_liked = self.KG.ppr_top_n(liked, top_n=top_n)
+        # top_n_disliked = self.KG.ppr_top_n(disliked, top_n=top_n)
 
-        def convert_back(uri):
-            # Should only be movies
-            return self.data_set.m_uri_idx_map[uri]
-
-        liked_uris = map(convert, liked)
-        disliked_uris = map(convert, disliked)
-
-        # 3. Pass to PPR, take the top 20
-        _top_n_liked = self.KG.ppr_top_n(liked_uris, top_n=top_n)
-        _top_n_disliked = self.KG.ppr_top_n(disliked_uris, top_n=top_n)
-
-        # 4. Map back to indices
-        # 4.1 Filter out URIs that we don't have in the ratings map
-        top_n_liked = [uri for uri, pr in _top_n_liked if uri in self.data_set.m_uri_idx_map]
-        top_n_disliked = [uri for uri, pr in _top_n_disliked if uri in self.data_set.m_uri_idx_map]
-
-        top_n_liked = list(map(convert_back, top_n_liked))
-        top_n_disliked = list(map(convert_back, top_n_disliked))
-
-        # 4. For the current user, use their evaluation set as the ground truth.
+        # 3. For the current user, use their evaluation set as the ground truth.
         #    For every movie in these predictions, see if they occur correctly in their sets.
 
         return self._average_precision(top_n_liked)
@@ -163,9 +151,11 @@ def evaluate(num_users, train=True):
             interview_score = 0
             done = False
             observation = env.choose_user(u, train=train)
+
             while not done:
-                action = brain.choose_action(observation)
+                action = brain.choose_action(observation, evaluation=True)
                 observation_, reward, done = env.step(action)
+
                 if done:
                     interview_score = reward
 
@@ -178,10 +168,10 @@ def evaluate(num_users, train=True):
 
 
 if __name__ == '__main__':
-    for n_questions in [2, 3, 4, 5]:
+    for n_questions in [1, 2, 3, 4, 5]:
         env = Environment(interview_length=n_questions)
         brain = InterviewAgent(gamma=0.99, batch_size=24,
-                               n_movies=env.n_movies, n_entities=env.n_entities, alpha=0.003,
+                               n_movies=env.n_movies, alpha=0.003,
                                epsilon=1.0, eps_dec=0.999, eps_end=0.2)
 
         n_epochs = 5
@@ -204,7 +194,7 @@ if __name__ == '__main__':
             train_score = 0
             test_score = 0
 
-            DataSet.shuffle(env.train_users)
+            MovieLensDataSet.shuffle(env.train_users)
 
             # Train on all train users
             print(f'Testing on {num_train_users} train users...')
@@ -240,9 +230,9 @@ if __name__ == '__main__':
 
                     print(f'{n_interviews} interviews, Epsilon: {brain.EPSILON}, avg. interview score: {recent_avg_score}')
 
-        # Only evaluate at the end
-        train_score_history.append(evaluate(num_train_users, train=True))
-        test_score_history.append(evaluate(num_test_users, train=False))
+            # Only evaluate at the end of an epoch
+            train_score_history.append(evaluate(num_train_users, train=True))
+            test_score_history.append(evaluate(num_test_users, train=False))
 
         with open(f'../results/{n_questions}Q.json', 'w') as fp:
             json.dump({

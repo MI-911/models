@@ -123,7 +123,6 @@ class Node:
     def print(self, idx_name_map):
         if self.p is None:
             return
-        print(f'{idx_name_map[self.p]} at depth {self.depth} ({len(self.users)} users)')
         if self.like_child is not None:
             self.like_child.print(idx_name_map)
         if self.dislike_child is not None:
@@ -191,7 +190,7 @@ class FunctionalMatrixFactorizaton:
 
         train_rmse = np.sqrt(train_sse / train_n)
         test_rmse = np.sqrt(test_sse / test_n)
-        print(f'Train RMSE: {np.sqrt(train_sse / train_n)}, Test RMSE: {np.sqrt(test_sse / test_n)}')
+        print(f'Train RMSE: {train_rmse}, Test RMSE: {test_rmse}')
 
         tp_train, fp_train = 0, 0
         tp_test, fp_test = 0, 0
@@ -263,7 +262,7 @@ class FunctionalMatrixFactorizaton:
             train_precs.append(train_p)
             test_precs.append(test_p)
 
-            tree.print(self.m_idx_name_map if not self.is_entity else self.e_idx_name_map)
+            # tree.print(self.m_idx_name_map if not self.is_entity else self.e_idx_name_map)
 
         import matplotlib.pyplot as plt
         plt.plot(train_rmses, color='orange', label='Train RMSE')

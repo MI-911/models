@@ -197,8 +197,6 @@ if __name__ == '__main__':
     precision_history = []
     recall_history = []
 
-
-
     print(f'Beginning training...')
     for e in range(n_epochs):
         shuffle(train)

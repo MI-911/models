@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import gym
 
-def plot_learning(x, train, test, epsilons, lines=None):
+def plot_learning(x, train, epsilons, lines=None):
     fig=plt.figure()
     ax=fig.add_subplot(111, label="1")
     ax2=fig.add_subplot(111, label="2", frame_on=False)
@@ -19,12 +19,6 @@ def plot_learning(x, train, test, epsilons, lines=None):
         running_avg[t] = np.mean(train[max(0, t-20):(t+1)])
 
     ax2.scatter(x, running_avg, color="C1")
-
-    running_avg = np.empty(N)
-    for t in range(N):
-        running_avg[t] = np.mean(test[max(0, t - 20):(t + 1)])
-
-    ax2.scatter(x, running_avg, color="C2")
 
     ax2.axes.get_xaxis().set_visible(False)
     ax2.yaxis.tick_right()

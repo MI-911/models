@@ -277,45 +277,45 @@ def load_fmf_users_movielens():
 
 
 if __name__ == '__main__':
-    with open('../data/mindreader/entities.csv') as fp:
-        entities = pd.read_csv(fp)
-    entity_map = {uri: name for uri, name in entities[['uri', 'name']].values}
+    # with open('../data/mindreader/entities.csv') as fp:
+    #     entities = pd.read_csv(fp)
+    # entity_map = {uri: name for uri, name in entities[['uri', 'name']].values}
 
-    # 1. Functional Matrix Factorization on MindReader data, only asks towards movies
-    train_users, test_users, n_users, n_movies, n_entities, m_idx_uri_map, e_idx_uri_map = load_fmf_users(with_entities=False)
-    # print(len(train_users))
-    k = 10
-    m_idx_name_map = {}
-    e_idx_name_map = {}
-    for m in range(n_movies):
-        m_idx_name_map[m] = entity_map[m_idx_uri_map[m]]
-    for e in range(n_entities):
-        e_idx_name_map[e] = entity_map[e_idx_uri_map[e]]
-
-    model = FunctionalMatrixFactorizaton(n_users, n_movies, n_entities, k=k, max_depth=3,
-                                         entities_in_question_set=False,
-                                         m_idx_name_map=m_idx_name_map,
-                                         e_idx_name_map=e_idx_name_map)
-    model.fit(train_users, test_users)
-
-    # 2. Functional Matrix Factorization on MindReader data, only asks towards entities
-    train_users, test_users, n_users, n_movies, n_entities, m_idx_uri_map, e_idx_uri_map = load_fmf_users(with_entities=True)
-    k = 10
-    m_idx_name_map = {}
-    e_idx_name_map = {}
-    for m in range(n_movies):
-        m_idx_name_map[m] = entity_map[m_idx_uri_map[m]]
-    for e in range(n_entities):
-        e_idx_name_map[e] = entity_map[e_idx_uri_map[e]]
-    model = FunctionalMatrixFactorizaton(n_users, n_movies, n_entities, k=k, max_depth=3,
-                                         entities_in_question_set=True,
-                                         m_idx_name_map=m_idx_name_map,
-                                         e_idx_name_map=e_idx_name_map)
-    model.fit(train_users, test_users)
+    # # 1. Functional Matrix Factorization on MindReader data, only asks towards movies
+    # train_users, test_users, n_users, n_movies, n_entities, m_idx_uri_map, e_idx_uri_map = load_fmf_users(with_entities=False)
+    # # print(len(train_users))
+    # k = 10
+    # m_idx_name_map = {}
+    # e_idx_name_map = {}
+    # for m in range(n_movies):
+    #     m_idx_name_map[m] = entity_map[m_idx_uri_map[m]]
+    # for e in range(n_entities):
+    #     e_idx_name_map[e] = entity_map[e_idx_uri_map[e]]
+    #
+    # model = FunctionalMatrixFactorizaton(n_users, n_movies, n_entities, k=k, max_depth=3,
+    #                                      entities_in_question_set=False,
+    #                                      m_idx_name_map=m_idx_name_map,
+    #                                      e_idx_name_map=e_idx_name_map)
+    # model.fit(train_users, test_users)
+    #
+    # # 2. Functional Matrix Factorization on MindReader data, only asks towards entities
+    # train_users, test_users, n_users, n_movies, n_entities, m_idx_uri_map, e_idx_uri_map = load_fmf_users(with_entities=True)
+    # k = 10
+    # m_idx_name_map = {}
+    # e_idx_name_map = {}
+    # for m in range(n_movies):
+    #     m_idx_name_map[m] = entity_map[m_idx_uri_map[m]]
+    # for e in range(n_entities):
+    #     e_idx_name_map[e] = entity_map[e_idx_uri_map[e]]
+    # model = FunctionalMatrixFactorizaton(n_users, n_movies, n_entities, k=k, max_depth=3,
+    #                                      entities_in_question_set=True,
+    #                                      m_idx_name_map=m_idx_name_map,
+    #                                      e_idx_name_map=e_idx_name_map)
+    # model.fit(train_users, test_users)
 
     # 3. Functional Matrix Factorization on MovieLens data
     train_users, test_users, n_users, n_movies, n_entities = load_fmf_users_movielens()
     k = 10
-    model = FunctionalMatrixFactorizaton(n_users, n_movies, n_entities, k=k, max_depth=3,
+    model = FunctionalMatrixFactorizaton(n_users, n_movies, n_entities, k=k, max_depth=1,
                                          entities_in_question_set=False)
     model.fit(train_users, test_users)

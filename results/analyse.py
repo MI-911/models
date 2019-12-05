@@ -2,76 +2,38 @@ import matplotlib.pyplot as plt
 import json
 import os
 import numpy as np
+from utilities.util import plot_learning
+
 
 MOVIES = 'MOVIES'
 ENTITIES = 'ENTITIES'
 BOTH = 'BOTH'
 
-
-def load_files():
-    json_stats = []
-    for file_name in os.listdir('./'):
-        if file_name == 'analyse.py':
-            continue
-
-        with open(file_name) as fp:
-            print(f'Loading {file_name}...')
-            json_stats.append(json.load(fp))
-
-    return json_stats
-
-
 if __name__ == '__main__':
-    json_stats = load_files()
+    f_names = ['1Q.json', '2Q.json', '3Q.json', '4Q.json', '5Q.json']
 
-    movies_stats = [stat for stat in json_stats if stat['asking_for'] == MOVIES.lower()]
-    entities_stats = [stat for stat in json_stats if stat['asking_for'] == ENTITIES.lower()]
-    both_stats = [stat for stat in json_stats if stat['asking_for'] == BOTH.lower()]
+    for i, f_name in enumerate(f_names, start=1):
+        with open(f'{f_name}') as fp:
+            data = json.load(fp)
 
-    movie_test_mses = [stat['train']['mse_history'] for stat in movies_stats]
-    entity_test_mses = [stat['train']['mse_history'] for stat in entities_stats]
-    both_test_mses = [stat['train']['mse_history'] for stat in both_stats]
+        train_ap = data['train']
+        test_ap = data['test']
 
-    # TODO: Plot the minimum MSE we achieved with each question category
-    #       at different interview lengths
-    movie_performances = [min(mses) for mses in movie_test_mses]
-    entity_performances = [min(mses) for mses in entity_test_mses]
-    both_performances = [min(mses) for mses in both_test_mses]
-
-    n_groups = 11
-
-    fig, ax = plt.subplots()
-
-    index = np.arange(n_groups)
-    bar_width = 0.15
-    opacity = 0.8
-
-    rects1 = plt.bar(index + bar_width * 0, movie_performances, bar_width, alpha=opacity, color='y', label='Movies')
-    rects2 = plt.bar(index + bar_width * 1, entity_performances, bar_width, alpha=opacity, color='b', label='Entities')
-    rects2 = plt.bar(index + bar_width * 2, both_performances, bar_width, alpha=opacity, color='g', label='Both')
-
-    plt.xlabel('N. questions asked')
-    plt.ylabel('Minimum test MSE during training')
-    plt.title('Minimum MSEs attained with interviews of varying length')
-    plt.xticks(index + bar_width, (q for q in range(n_groups)))
-    plt.legend()
-    plt.tight_layout()
-    plt.show()
-
-    # TODO: Plot how the MSE changed during training for different interview
-    #       lengths, separately for each question category
-
-    for cat, mses_set in [(MOVIES, movie_test_mses), (ENTITIES, entity_test_mses), (BOTH, both_test_mses)]:
-        [plt.plot(mses, label=f'{q} questions') for q, mses in enumerate(mses_set)]
-        plt.xlabel('Batch updates')
-        plt.ylabel('Test MSE')
-        plt.title(f'MSE progression for {cat.lower()}-interviews of varying lengths')
-
-        plt.legend()
+        plt.plot(train_ap, label='Training AP@20 at every epoch')
+        plt.plot(test_ap, label='Test AP@20 at every epoch')
+        plt.title(f'AP@20 for training and testing (5 epochs, {i} questions)')
+        plt.xlabel('Epochs')
+        plt.ylabel('AP@20')
         plt.show()
 
+        running_ap = data['avg@50']
+        running_eps = data['eps@50']
 
+        x = [i for i in range(len(running_ap))]
+        plot_learning(x, running_ap, running_eps)
 
+        losses = data['losses']
+        plt.plot(losses)
+        plt.show()
 
-
-
+        print(f'Train AP@20: {data["train"]} - ' + f'Test AP@20: {data["test"]}')
