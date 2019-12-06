@@ -188,14 +188,13 @@ def cold_start(from_path='../data/mindreader/user_ratings_map.json', entities_pa
 
     # Split movie ratings into training and test sets
     for u, ratings in idx_u_r_map.items():
-        m_ratings = idx_u_r_map[u]['movies']
-        split_index = int(len(m_ratings) * (split_ratio[0] / 100))
+        m_ratings = [(head, rating) for head, rating in idx_u_r_map[u]['movies'] if rating == conversion_map[1]]
 
         shuffle(m_ratings)
-        training = m_ratings[:split_index]
+        split_index = int(len(m_ratings) * (split_ratio[0] / 100))
         test = m_ratings[split_index:]
 
-        idx_u_r_map[u]['movies'] = training
+        idx_u_r_map[u]['movies'] = [(head, tail) for head, tail in idx_u_r_map[u]['movies'] if (head, tail) not in test]
         idx_u_r_map[u]['test'] = test
 
     return idx_u_r_map, uc, m_uri_map, e_uri_map

@@ -1,7 +1,9 @@
+from collections import defaultdict
 from random import sample, choice
 
 from networkx import pagerank_scipy, Graph
 
+from data.graph_loader import load_graph
 from data.training import cold_start
 from utilities.metrics import average_precision, hitrate, ndcg_at_k
 from utilities.util import get_top_movies, filter_min_k, get_entity_occurrence, prune_low_occurrence
@@ -66,15 +68,15 @@ def run():
     all_movies = set(movie_idx.keys())
 
     # Get entity frequency
-    entity_frequency = {}
+    entity_frequency = defaultdict(int)
     for user, ratings in u_r_map.items():
         for idx, rating in ratings['movies']:
             uri = idx_movie[idx]
-            entity_frequency[uri] = entity_frequency.get(uri, 0) + 1
+            entity_frequency[uri] += 1
 
         for idx, rating in ratings['entities']:
             uri = idx_entity[idx]
-            entity_frequency[uri] = entity_frequency.get(uri, 0) + 1
+            entity_frequency[uri] += 1
 
     # Filter entities with only one occurrence
     entity_occurrence = get_entity_occurrence(u_r_map, idx_entity, idx_movie)
@@ -83,9 +85,12 @@ def run():
     # Static, non-personalized measure of top movies
     top_movies = get_top_movies(u_r_map, idx_movie)
 
+    G = load_graph(graph_path='../data/graph/triples.csv', directed=False)
+
     # Try different samples
     k = 10
-    for samples in range(1, 11):
+    filtered = filter_min_k(u_r_map, 5).items()
+    for samples in range(1, 6):
         count = 0
 
         sum_popular_ap = 0
@@ -100,7 +105,7 @@ def run():
         sum_entity_ndcg = 0
         sum_movie_ndcg = 0
 
-        for user, ratings in filter_min_k(u_r_map, samples).items():
+        for user, ratings in filtered:
             # Sample k entities
             sampled_entities = [idx_entity[head] for head, _ in sample(ratings['entities'], samples)]
 
@@ -110,10 +115,6 @@ def run():
             # Use remaining movies as ground truth
             ground_truth = [idx_movie[head] for head, tail in ratings['movies'] if head not in sampled_movies][:1]
             left_out = choice(ground_truth)
-
-            # Construct graph without user's ground truth ratings
-            exclude_ratings = {(user, movie) for movie in ground_truth}
-            G = construct_collaborative_graph(Graph(), u_r_map, idx_movie, idx_entity, exclude=exclude_ratings)
 
             if ground_truth:
                 # Predict liked movies guessed on entities and movies
@@ -138,19 +139,19 @@ def run():
                 count += 1
 
         print(f'{samples} samples:')
-        print(f'Popular MAP: {sum_popular_ap / count}')
-        print(f'Entity MAP: {sum_entity_ap / count}')
-        print(f'Movie MAP: {sum_movie_ap / count}')
+        print(f'Popular MAP: {sum_popular_ap / count * 100}%')
+        print(f'Entity MAP: {sum_entity_ap / count * 100}%')
+        print(f'Movie MAP: {sum_movie_ap / count * 100}%')
         print()
 
-        print(f'Popular NDCG: {sum_popular_ndcg / count}')
-        print(f'Entity NDCG: {sum_entity_ndcg / count}')
-        print(f'Movie NDCG: {sum_movie_ndcg / count}')
+        print(f'Popular NDCG: {sum_popular_ndcg / count * 100}%')
+        print(f'Entity NDCG: {sum_entity_ndcg / count * 100}%')
+        print(f'Movie NDCG: {sum_movie_ndcg / count * 100}%')
         print()
 
-        print(f'Popular hit-rate: {hits_popular / count}')
-        print(f'Entity hit-rate: {hits_entity / count}')
-        print(f'Movie hit-rate: {hits_movie / count}')
+        print(f'Popular hit-rate: {hits_popular / count * 100}%')
+        print(f'Entity hit-rate: {hits_entity / count * 100}%')
+        print(f'Movie hit-rate: {hits_movie / count * 100}%')
         print()
 
 

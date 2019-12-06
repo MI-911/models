@@ -17,6 +17,7 @@ def get_model(entity_len, movie_dim):
     model = Sequential()
 
     model.add(Dense(32, input_dim=entity_len, activation='tanh'))
+    model.add(Dropout(0.1))
     model.add(Dense(16, activation='tanh'))
     model.add(Dense(movie_dim, activation='tanh'))
 
@@ -32,7 +33,7 @@ def min_k(users, k):
 def run():
     like_signal = 1
     dislike_signal = -1
-    unknown_signal = None
+    unknown_signal = 0
 
     u_r_map, n_users, movie_idx, entity_idx = cold_start(
         conversion_map={
@@ -128,7 +129,7 @@ def run():
             print(f'Validation hitrate: {(hits / len(y_val)) * 100}%')
 
     model.compile(optimizer='adam', loss='mean_squared_error')
-    model.fit(np.asarray(train_x), np.asarray(train_y), epochs=50, batch_size=8, verbose=False, validation_split=0.15,
+    model.fit(np.asarray(train_x), np.asarray(train_y), epochs=20, batch_size=16, verbose=False, validation_split=0.15,
               callbacks=[Metrics()])
 
     # Static, non-personalized measure of top movies

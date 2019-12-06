@@ -1,3 +1,4 @@
+from collections import defaultdict
 from random import sample, shuffle, choice
 import itertools
 from data.training import cold_start
@@ -28,13 +29,20 @@ def knn(user_vectors, user, own_vector, neighbours):
     return sorted(similarities, key=lambda x: x[1], reverse=True)[:neighbours]
 
 
-def predict_movies(idx_movie, u_r_map, neighbour_weights, exclude=None):
-    movie_weight = dict()
+def predict_movies(idx_movie, u_r_map, neighbour_weights, top_movies, popularity_bias=1, exclude=None):
+    movie_weight = defaultdict(int)
+
+    # Add popularity bias
+    for movie in top_movies:
+        movie_weight[movie] += popularity_bias
 
     for neighbour, weight in neighbour_weights:
+        if not weight:
+            continue
+
         for movie, rating in u_r_map[neighbour]['movies']:
             movie_uri = idx_movie[movie]
-            movie_weight[movie_uri] = movie_weight.get(movie_uri, 0) + rating * weight
+            movie_weight[movie_uri] += weight * rating
 
     # Get weighted prediction and exclude excluded URIs
     predictions = sorted(list(movie_weight.items()), key=lambda x: x[1], reverse=True)
@@ -42,15 +50,19 @@ def predict_movies(idx_movie, u_r_map, neighbour_weights, exclude=None):
 
 
 def run():
+    dislike = 1
+    unknown = 5
+    like = 10
+
     u_r_map, n_users, movie_idx, entity_idx = cold_start(
         from_path='../data/mindreader/user_ratings_map.json',
         conversion_map={
-            -1: -1,
-            0: None,
-            1: 1
+            -1: dislike,
+            0: unknown,
+            1: like
         },
         restrict_entities=None,
-        split_ratio=[100, 0]
+        split_ratio=[75, 25]
     )
 
     # Add movies to the entity_idx map
@@ -83,11 +95,15 @@ def run():
             for uri, rating in sampled:
                 user_vectors[user][entity_idx[uri]] = rating
 
+    # k is the number of items to evaluate in the top
+    k = 10
+
     # Static, non-personalized measure of top movies
     top_movies = get_top_movies(u_r_map, idx_movie)
+    print(top_movies[:k])
 
-    # Sample k movies and entities
-    k = 10
+    filtered = filter_min_k(u_r_map, 5).items()
+    neighbours = 5
     for samples in range(1, 6):
         subset_hits = {subset: 0 for subset in subsets}
         subset_aps = {subset: 0 for subset in subsets}
@@ -95,7 +111,7 @@ def run():
 
         count = 0
 
-        for user, ratings in filter_min_k(u_r_map, samples).items():
+        for user, ratings in filtered:
             subset_samples = {}
             for subset, idx_lookup in subsets.items():
                 if idx_lookup:
@@ -103,7 +119,7 @@ def run():
 
             all_samples = set(itertools.chain.from_iterable(subset_samples.values()))
 
-            ground_truth = [idx_movie[head] for head, rating in ratings['movies'] if rating == 1]
+            ground_truth = [idx_movie[head] for head, rating in ratings['test']]
             ground_truth = [head for head in ground_truth if head not in all_samples]
             if not ground_truth:
                 continue
@@ -125,8 +141,9 @@ def run():
                     own_vector[entity_idx[uri]] = rating
 
                 # Get neighbours and make predictions
-                neighbour_weights = knn(user_vectors, user, own_vector, neighbours=5)
-                predictions = predict_movies(idx_movie, u_r_map, neighbour_weights, exclude=[h for h, _ in sampled])
+                neighbour_weights = knn(user_vectors, user, own_vector, neighbours=neighbours)
+                predictions = predict_movies(idx_movie, u_r_map, neighbour_weights, top_movies[:k],
+                                             popularity_bias=1, exclude=[h for h, _ in sampled])
                 subset_predictions[subset] = predictions
 
             # Metrics
@@ -137,7 +154,7 @@ def run():
 
             count += 1
 
-        print(f'{samples} samples:')
+        print(f'{samples} samples, {neighbours} neighbours:')
         for subset in subsets:
             print(f'{subset.title()} MAP: {subset_aps[subset] / count * 100}%')
             print(f'{subset.title()} hit-rate: {subset_hits[subset] / count * 100}%')
