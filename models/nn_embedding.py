@@ -16,9 +16,9 @@ from utilities.util import filter_min_k, get_top_movies, get_entity_occurrence, 
 def get_model(entity_len, movie_dim):
     model = Sequential()
 
-    model.add(Dense(32, input_dim=entity_len, activation='tanh'))
-    model.add(Dropout(0.1))
-    model.add(Dense(16, activation='tanh'))
+    model.add(Dense(256, input_dim=entity_len, activation='tanh'))
+    model.add(Dense(128, activation='tanh'))
+    model.add(Dense(64, activation='tanh'))
     model.add(Dense(movie_dim, activation='tanh'))
 
     print(model.summary())
@@ -31,9 +31,9 @@ def min_k(users, k):
 
 
 def run():
-    like_signal = 1
-    dislike_signal = -1
-    unknown_signal = 0
+    like_signal = 10
+    dislike_signal = -10
+    unknown_signal = None
 
     u_r_map, n_users, movie_idx, entity_idx = cold_start(
         conversion_map={
@@ -42,7 +42,7 @@ def run():
             1: like_signal
         },
         restrict_entities=None,
-        split_ratio=[75, 25]
+        split_ratio=[85, 15]
     )
 
     # Get entities
@@ -128,9 +128,27 @@ def run():
 
             print(f'Validation hitrate: {(hits / len(y_val)) * 100}%')
 
-    model.compile(optimizer='adam', loss='mean_squared_error')
-    model.fit(np.asarray(train_x), np.asarray(train_y), epochs=20, batch_size=16, verbose=False, validation_split=0.15,
+    model.compile(optimizer='adam', loss='binary_crossentropy')
+    model.fit(np.asarray(train_x), np.asarray(train_y), epochs=10, batch_size=128, verbose=False, validation_split=0.15,
               callbacks=[Metrics()])
+
+    # Smoke test
+    while True:
+        print(f'Ready for next input')
+        inp = input()
+        if not inp:
+            break
+        inp = inp.split(' ')
+
+        smoke_x = np.zeros(len(entity_idx))
+        smoke_x[entity_idx[f'http://www.wikidata.org/entity/{inp[0]}']] = inp[1]
+
+        pred = model.predict(np.array([smoke_x])).argsort()[0][::-1][:10]
+
+        for arg in pred:
+            predicted_uri = idx_movie[arg]
+
+            print(f'{entities[predicted_uri]} ({predicted_uri})')
 
     # Static, non-personalized measure of top movies
     top_movies = get_top_movies(u_r_map, idx_movie)

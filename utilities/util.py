@@ -1,3 +1,6 @@
+from random import shuffle
+
+
 def combine_movie_entity_index(data):
     combined = [{}, {}]
 
@@ -66,3 +69,10 @@ def prune_low_occurrence(u_r_map, idx_entity, idx_movie, occurrence, keep=2, pru
             pruned_map[user]['test'] = ratings['test']
 
     return pruned_map
+
+
+def split_users(all_users, train_ratio):
+    shuffle(all_users)
+    split_index = int(len(all_users) * train_ratio)
+
+    return all_users[:split_index], all_users[split_index:]

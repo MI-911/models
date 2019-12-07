@@ -46,7 +46,7 @@ def analyse_mindreader(G):
     u_r_map, _, m_uri_map, _ = cold_start(
         from_path='../data/mindreader/user_ratings_map.json',
         conversion_map={
-            -1: None,
+            -1: -1,
             0: None,  # Ignore don't know ratings
             1: 1
         },
@@ -65,7 +65,7 @@ def analyse_mindreader(G):
 
         user_uris.append(list(uri_combinations))
 
-    analyse(G, 'mindreader_pairwise_distance.json', user_uris)
+    analyse(G, 'mindreader_pairwise_distance_liked.json', user_uris)
 
 
 def analyse_movielens(G):
@@ -87,6 +87,6 @@ def analyse_movielens(G):
 if __name__ == '__main__':
     graph = load_graph(graph_path='../data/graph/triples.csv', directed=False, exclude_relations=['FROM_DECADE'])
 
-    # analyse_mindreader(graph)
-    analyse_movielens(graph)
+    analyse_mindreader(graph)
+    # analyse_movielens(graph)
 

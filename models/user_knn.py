@@ -11,7 +11,11 @@ from utilities.util import filter_min_k, get_top_movies, get_entity_occurrence, 
 
 
 def similarity(a, b):
-    return a.dot(b)
+    dot = np.dot(a, b)
+    norm_a = np.linalg.norm(a)
+    norm_b = np.linalg.norm(b)
+
+    return 1 - dot / (norm_a * norm_b)
 
 
 def knn(user_vectors, user, own_vector, neighbours):
@@ -26,15 +30,16 @@ def knn(user_vectors, user, own_vector, neighbours):
     # Shuffle s.t. any secondary ordering is random
     shuffle(similarities)
 
-    return sorted(similarities, key=lambda x: x[1], reverse=True)[:neighbours]
+    return sorted(similarities, key=lambda x: x[1], reverse=False)[:neighbours]
 
 
-def predict_movies(idx_movie, u_r_map, neighbour_weights, top_movies, popularity_bias=1, exclude=None):
+def predict_movies(idx_movie, u_r_map, neighbour_weights, top_movies=None, popularity_bias=1, exclude=None):
     movie_weight = defaultdict(int)
 
     # Add popularity bias
-    for movie in top_movies:
-        movie_weight[movie] += popularity_bias
+    if top_movies:
+        for movie in top_movies:
+            movie_weight[movie] += popularity_bias
 
     for neighbour, weight in neighbour_weights:
         if not weight:
@@ -42,7 +47,7 @@ def predict_movies(idx_movie, u_r_map, neighbour_weights, top_movies, popularity
 
         for movie, rating in u_r_map[neighbour]['movies']:
             movie_uri = idx_movie[movie]
-            movie_weight[movie_uri] += weight * rating
+            movie_weight[movie_uri] += rating
 
     # Get weighted prediction and exclude excluded URIs
     predictions = sorted(list(movie_weight.items()), key=lambda x: x[1], reverse=True)
@@ -102,6 +107,13 @@ def run():
     top_movies = get_top_movies(u_r_map, idx_movie)
     print(top_movies[:k])
 
+    # Smoke test
+    test_vector = np.zeros(len(entity_idx))
+    test_vector[entity_idx['http://www.wikidata.org/entity/Q3772']] = 1
+
+    predictions = predict_movies(idx_movie, u_r_map, knn(user_vectors, -1, test_vector, neighbours=25))
+    print(predictions)
+
     filtered = filter_min_k(u_r_map, 5).items()
     neighbours = 5
     for samples in range(1, 6):
@@ -143,7 +155,7 @@ def run():
                 # Get neighbours and make predictions
                 neighbour_weights = knn(user_vectors, user, own_vector, neighbours=neighbours)
                 predictions = predict_movies(idx_movie, u_r_map, neighbour_weights, top_movies[:k],
-                                             popularity_bias=1, exclude=[h for h, _ in sampled])
+                                             popularity_bias=0, exclude=[h for h, _ in sampled])
                 subset_predictions[subset] = predictions
 
             # Metrics
