@@ -33,6 +33,7 @@ def dcg_at_k(r, k, method=0):
             return np.sum(r / np.log2(np.arange(2, r.size + 2)))
         else:
             raise ValueError('method must be 0 or 1.')
+
     return 0.
 
 

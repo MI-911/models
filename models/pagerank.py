@@ -1,6 +1,7 @@
 from collections import defaultdict
 from random import sample, choice
 
+import tqdm
 from networkx import pagerank_scipy, Graph
 
 from data.graph_loader import load_graph
@@ -105,7 +106,7 @@ def run():
         sum_entity_ndcg = 0
         sum_movie_ndcg = 0
 
-        for user, ratings in filtered:
+        for user, ratings in tqdm.tqdm(filtered):
             # Sample k entities
             sampled_entities = [idx_entity[head] for head, _ in sample(ratings['entities'], samples)]
 

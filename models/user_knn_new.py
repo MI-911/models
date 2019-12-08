@@ -1,43 +1,46 @@
 import json
+import random
 from collections import defaultdict
-from random import sample, shuffle, choice
-import itertools
+from random import sample, choice
 
+import numpy as np
 from sklearn.neighbors import NearestNeighbors
 
 from data.training import cold_start
-from scipy import spatial
-
-import numpy as np
-
-from utilities.metrics import ndcg_at_k, average_precision, hitrate
-from utilities.util import filter_min_k, get_top_movies, get_entity_occurrence, prune_low_occurrence, split_users
+from utilities.metrics import hitrate, ndcg_at_k, average_precision
+from utilities.util import get_top_movies, get_entity_occurrence, prune_low_occurrence, split_users
 
 
-def predict_movies(idx_movie, u_r_map, neighbour_weights, top_movies=None, popularity_bias=1, exclude=None):
+def predict_movies(model, keys, uri_ratings, entity_idx, idx_movie, u_r_map, exclude=None):
+    vector = np.zeros(len(entity_idx))
+
+    for uri, rating in uri_ratings:
+        vector[entity_idx[uri]] = rating
+
+    distances, indices = model.kneighbors(vector.reshape(1, len(vector)), 15)
+
+    neighbours = list()
+    for index, distance in zip(indices.squeeze(), distances.squeeze()):
+        neighbours.append((keys[index], distance))
+
+    return _predict(idx_movie, u_r_map, neighbours, exclude)
+
+
+def _predict(idx_movie, u_r_map, neighbour_weights, exclude=None):
     movie_weight = defaultdict(int)
 
-    # Add popularity bias
-    if top_movies:
-        for movie in top_movies:
-            movie_weight[movie] += popularity_bias
-
     for neighbour, weight in neighbour_weights:
-        if not weight:
-            continue
-
         for movie, rating in u_r_map[neighbour]['movies'] + u_r_map[neighbour]['test']:
-            movie_uri = idx_movie[movie]
-            movie_weight[movie_uri] += rating
+            movie_weight[idx_movie[movie]] += rating
 
     # Get weighted prediction and exclude excluded URIs
     predictions = sorted(list(movie_weight.items()), key=lambda x: x[1], reverse=True)
     return [head for head, rating in predictions if not exclude or head not in exclude]
 
 
-def user_to_vector(ratings, entity_idx, idx_movie, include_test=False):
+def user_to_vector(ratings, entity_idx, idx_movie):
     vector = np.zeros(len(entity_idx))
-    movie_ratings = [(entity_idx[idx_movie[head]], rating) for head, rating in ratings['movies'] + (ratings['test'] if include_test else [])]
+    movie_ratings = [(entity_idx[idx_movie[head]], rating) for head, rating in ratings['movies'] + ratings['test']]
 
     for idx, rating in ratings['entities'] + movie_ratings:
         vector[idx] = rating
@@ -46,9 +49,11 @@ def user_to_vector(ratings, entity_idx, idx_movie, include_test=False):
 
 
 def run():
-    dislike = 1
+    random.seed(42)
+
+    dislike = -1
     unknown = None
-    like = 5
+    like = 1
 
     u_r_map, n_users, movie_idx, entity_idx = cold_start(
         from_path='../data/mindreader/user_ratings_map.json',
@@ -58,7 +63,7 @@ def run():
             1: like
         },
         restrict_entities=None,
-        split_ratio=[75, 25]
+        split_ratio=[80, 20]
     )
 
     # Load entities
@@ -83,7 +88,7 @@ def run():
 
     # Split into train and test users
     all_users = list(u_r_map.items())
-    train_users, test_users = split_users(all_users, train_ratio=0.75)
+    train_users, test_users = split_users(all_users, train_ratio=0.85)
 
     # Create indices from train users
     user_idx = {}
@@ -95,7 +100,7 @@ def run():
     # Populate user vectors
     user_vectors = {}
     for user, ratings in train_users:
-        user_vectors[user] = user_to_vector(ratings, entity_idx, idx_movie, include_test=True)
+        user_vectors[user] = user_to_vector(ratings, entity_idx, idx_movie)
 
     # For index lookup
     keys = list(user_vectors.keys())
@@ -104,20 +109,75 @@ def run():
     model = NearestNeighbors()
     model.fit(list(user_vectors.values()))
 
-    # Predict
-    smoke_vector = np.zeros(len(entity_idx))
-    smoke_vector[entity_idx['http://www.wikidata.org/entity/Q3772']] = like
+    # Smoke test
+    smoke_ratings = [('http://www.wikidata.org/entity/Q3772', like)]
 
-    distances, indices = model.kneighbors(smoke_vector.reshape(1, len(smoke_vector)), 5)
+    for prediction in predict_movies(model, keys, smoke_ratings, entity_idx, idx_movie, u_r_map, exclude=None)[:10]:
+        print(entities[prediction])
 
-    neighbours = list()
-    for index in indices.squeeze():
-        neighbours.append((keys[index], 1))
+    top_movies = get_top_movies(u_r_map, idx_movie)
 
-    predictions = predict_movies(idx_movie, u_r_map, neighbours)[:5]
-    for uri in predictions:
-        print(entities[uri])
+    # Metrics
+    k = 10
+    filtered = test_users
+    subsets = {'movies': idx_movie, 'entities': idx_entity, 'popular': None}
+    for samples in range(1, 6):
+        subset_hits = {subset: 0 for subset in subsets}
+        subset_aps = {subset: 0 for subset in subsets}
+        subset_ndcg = {subset: 0 for subset in subsets}
 
+        count = 0
+
+        for user, ratings in filtered:
+            subset_samples = {}
+            skip_user = False
+
+            for subset, idx_lookup in subsets.items():
+                if not idx_lookup:
+                    continue  # No sampling needed for popular
+
+                sample_from = [(head, rating) for head, rating in ratings[subset] if rating == like]
+                if len(sample_from) < samples:
+                    skip_user = True
+                    break
+
+                subset_samples[subset] = [(idx_lookup[idx], rating) for idx, rating in sample(sample_from, samples)]
+
+            if skip_user or not ratings['test']:
+                continue
+
+            ground_truth = [idx_movie[head] for head, rating in ratings['test']]
+            left_out = choice(ground_truth)
+
+            # Try both subsets
+            subset_predictions = dict()
+            for subset, idx_lookup in subsets.items():
+                if subset == 'popular':
+                    subset_predictions[subset] = top_movies
+
+                    continue
+
+                sampled = subset_samples[subset]
+
+                # Get neighbours and make predictions
+                predictions = predict_movies(model, keys, sampled, entity_idx, idx_movie, u_r_map,
+                                             exclude=[h for h, _ in sampled])
+                subset_predictions[subset] = predictions
+
+            # Metrics
+            for subset, predictions in subset_predictions.items():
+                subset_aps[subset] += average_precision(ground_truth, predictions, k=k)
+                subset_hits[subset] += hitrate(left_out, predictions, k=k)
+                subset_ndcg[subset] += ndcg_at_k(ground_truth, predictions, k=k)
+
+            count += 1
+
+        print(f'{samples} samples:')
+        for subset in subsets:
+            print(f'{subset.title()} MAP: {subset_aps[subset] / count * 100}%')
+            print(f'{subset.title()} hit-rate: {subset_hits[subset] / count * 100}%')
+            print(f'{subset.title()} NDCG: {subset_ndcg[subset] / count * 100}%')
+            print()
 
 
 if __name__ == '__main__':
