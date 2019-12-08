@@ -2,32 +2,16 @@ import json
 from collections import defaultdict
 from random import sample, shuffle, choice
 import itertools
+
+from sklearn.neighbors import NearestNeighbors
+
 from data.training import cold_start
 from scipy import spatial
-from sklearn.neighbors import NearestNeighbors
+
 import numpy as np
 
 from utilities.metrics import ndcg_at_k, average_precision, hitrate
 from utilities.util import filter_min_k, get_top_movies, get_entity_occurrence, prune_low_occurrence, split_users
-
-
-def similarity(a, b):
-    return np.linalg.norm(a) - np.linalg.norm(b)
-
-
-def knn(user_vectors, user, own_vector, neighbours):
-    similarities = []
-
-    for other, other_vector in user_vectors.items():
-        if other == user:
-            continue
-
-        similarities.append((other, similarity(own_vector, other_vector)))
-
-    # Shuffle s.t. any secondary ordering is random
-    shuffle(similarities)
-
-    return sorted(similarities, key=lambda x: x[1], reverse=True)[:neighbours]
 
 
 def predict_movies(idx_movie, u_r_map, neighbour_weights, top_movies=None, popularity_bias=1, exclude=None):
@@ -44,26 +28,27 @@ def predict_movies(idx_movie, u_r_map, neighbour_weights, top_movies=None, popul
 
         for movie, rating in u_r_map[neighbour]['movies'] + u_r_map[neighbour]['test']:
             movie_uri = idx_movie[movie]
-            movie_weight[movie_uri] += rating * weight
+            movie_weight[movie_uri] += rating
 
     # Get weighted prediction and exclude excluded URIs
     predictions = sorted(list(movie_weight.items()), key=lambda x: x[1], reverse=True)
     return [head for head, rating in predictions if not exclude or head not in exclude]
 
 
-def get_variances(item_vectors):
-    item_variances = {}
+def user_to_vector(ratings, entity_idx, idx_movie, include_test=False):
+    vector = np.zeros(len(entity_idx))
+    movie_ratings = [(entity_idx[idx_movie[head]], rating) for head, rating in ratings['movies'] + (ratings['test'] if include_test else [])]
 
-    for item, vector in item_vectors.items():
-        item_variances[item] = np.var(vector[np.nonzero(vector)])
+    for idx, rating in ratings['entities'] + movie_ratings:
+        vector[idx] = rating
 
-    return item_variances
+    return vector
 
 
 def run():
-    dislike = -1
+    dislike = 1
     unknown = None
-    like = 1
+    like = 5
 
     u_r_map, n_users, movie_idx, entity_idx = cold_start(
         from_path='../data/mindreader/user_ratings_map.json',
@@ -73,7 +58,7 @@ def run():
             1: like
         },
         restrict_entities=None,
-        split_ratio=[100, 0]
+        split_ratio=[75, 25]
     )
 
     # Load entities
@@ -97,7 +82,8 @@ def run():
     u_r_map = prune_low_occurrence(u_r_map, idx_entity, idx_movie, entity_occurrence)
 
     # Split into train and test users
-    train_users, test_users = split_users(list(u_r_map.items()), train_ratio=0.75)
+    all_users = list(u_r_map.items())
+    train_users, test_users = split_users(all_users, train_ratio=0.75)
 
     # Create indices from train users
     user_idx = {}
@@ -106,42 +92,32 @@ def run():
         user_idx[user] = user_count
         user_count += 1
 
-    # Initialize item vectors
-    entity_vectors = {}
-    for entity, idx in entity_idx.items():
-        entity_vectors[entity] = np.zeros(len(user_idx))
-
-    # Populate item vectors
+    # Populate user vectors
+    user_vectors = {}
     for user, ratings in train_users:
-        idx = user_idx[user]
+        user_vectors[user] = user_to_vector(ratings, entity_idx, idx_movie, include_test=True)
 
-        entity_ratings = [(idx_entity[head], rating) for head, rating in ratings['entities']]
-        movie_ratings = [(idx_movie[head], rating) for head, rating in ratings['movies']]
-        uri_ratings = entity_ratings + movie_ratings
-
-        for uri, rating in uri_ratings:
-            entity_vectors[uri][idx] = rating
-
-    # Print entities with highest variance, just for fun
-    # item_variances = sorted(entity_vectors.items(), key=lambda item: item[1], reverse=True)
-
-    # Get movie vectors
-    movie_vectors = dict()
-    for entity, vector in entity_vectors.items():
-        if entity in movie_idx:
-            movie_vectors[entity] = vector
+    # For index lookup
+    keys = list(user_vectors.keys())
 
     # kNN model
-    model = NearestNeighbors(metric='cosine')
-    model.fit(list(movie_vectors.values()))
+    model = NearestNeighbors()
+    model.fit(list(user_vectors.values()))
 
     # Predict
-    vector = entity_vectors['http://www.wikidata.org/entity/Q3772']
-    distances, indices = model.kneighbors(vector.reshape(1, len(vector)), 10)
+    smoke_vector = np.zeros(len(entity_idx))
+    smoke_vector[entity_idx['http://www.wikidata.org/entity/Q3772']] = like
 
+    distances, indices = model.kneighbors(smoke_vector.reshape(1, len(smoke_vector)), 5)
+
+    neighbours = list()
     for index in indices.squeeze():
-        uri = idx_movie[index]
-        print(f'{uri}: {entities[uri]}')
+        neighbours.append((keys[index], 1))
+
+    predictions = predict_movies(idx_movie, u_r_map, neighbours)[:5]
+    for uri in predictions:
+        print(entities[uri])
+
 
 
 if __name__ == '__main__':
