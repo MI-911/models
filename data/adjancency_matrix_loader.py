@@ -17,7 +17,7 @@ def load_adjacency_matrix(path):
 
     values = np.zeros((len(df)*2,))
     indices = np.zeros((len(df)*2, 2))
-    for index, (head, relation, tail) in tqdm(df[:5000].iterrows(), desc='Creating matrix', total=len(df)):
+    for index, (head, relation, tail) in tqdm(df.iterrows(), desc='Creating matrix', total=len(df)):
         cur_index = index * 2
         h_index = entitity_index[head]
         t_index = entitity_index[tail]

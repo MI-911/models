@@ -18,7 +18,7 @@ class GNN(nn.Module):
         self.relation_emb = nn.Parameter(torch.rand((n_relations, latent_dim)), requires_grad=True).expand(batch_size, n_relations, latent_dim)
         self.entity_emb = nn.Parameter(torch.rand((n_entities, latent_dim)), requires_grad=True)
         self.adjacency_matrix = torch.sparse.FloatTensor(indices, values, torch.Size([n_entities, n_entities])).\
-            to_dense().expand(batch_size, n_entities, n_entities)
+            to_dense()
         self.size = torch.Size([n_entities, n_entities])
 
         # GNN layer 0
@@ -32,14 +32,18 @@ class GNN(nn.Module):
         u_emb = self.user_emb(user)
         r = nn.Embedding(self.n_entities, 1, padding_idx=0)
         b = torch.einsum('bi,bji->bj', u_emb, self.relation_emb)
-        r.weights = b
 
-        user_a_m = r(self.adjacency_matrix).squeeze(3)
+        user_a_m = torch.FloatTensor(np.zeros((self.batch_size, self.n_entities, self.n_entities)))
+
+        for i in range(self.batch_size):
+            r.weights = b[i]
+            user_a_m[i] = r(self.adjacency_matrix).squeeze(2)
 
         # Layer 0
-        l0 = user_a_m.matmul(self.entity_emb).matmul(self.weight_0)
+        a = user_a_m.matmul(self.entity_emb)
+        l0 = a.matmul(self.weight_0)
 
-        last_layer = l0[:, entity].squeeze(1)
+        last_layer = l0[torch.arange(self.batch_size), entity]
         user_entity_representation = self.gnn_last_layer_activation(last_layer)
 
         # Pred

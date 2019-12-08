@@ -8,8 +8,7 @@ from tqdm import tqdm
 from data.adjancency_matrix_loader import load_adjacency_matrix
 from data.training import warm_start
 from models.label_smoothness import GNN
-
-
+from utilities.util import batch_generator
 
 if __name__ == '__main__':
     train, test, n_users, n_movies, n_descriptive_entities = warm_start(
@@ -36,15 +35,19 @@ if __name__ == '__main__':
     k = 20
     lr = 1e-4
     eval_every = 10
+    batch_size = 1
 
-    model = GNN(n_users, len(relation_index), n_entities, values, indices, )
+    model = GNN(n_users, len(relation_index), n_entities, values, indices, batch_size=batch_size)
     optimizer = optimizers.SGD(model.parameters(), lr=lr)
     loss_fn = nn.MSELoss()
 
     for n in range(n_iter):
+        train_gen = batch_generator(train, batch_size)
+        test_gen = batch_generator(test, batch_size)
+
         step = 0
         tot_loss = 0
-        for users, entities, ratings in tqdm(train):
+        for users, entities, ratings in tqdm(train_gen, total=(len(train)//batch_size), position=0):
             step += 1
             prediction = model(users, entities)
             loss = loss_fn(prediction, ratings)
@@ -52,6 +55,8 @@ if __name__ == '__main__':
             loss.backward()
             optimizer.step()
             optimizer.zero_grad()
+            if step == 5:
+                break
 
         if step != 0 and n % 1 == 0:
             print(f'Iter: {n}')
@@ -61,7 +66,7 @@ if __name__ == '__main__':
         with torch.no_grad():
             step = 0
             tot_loss = 0
-            for users, entities, ratings in train:
+            for users, entities, ratings in tqdm(test_gen, total=(len(test)//batch_size), position=1):
                 step += 1
                 prediction = model(users, entities)
                 loss = loss_fn(prediction, ratings)
