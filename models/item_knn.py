@@ -1,33 +1,16 @@
 import json
+import random
 from collections import defaultdict
-from random import sample, shuffle, choice
-import itertools
-from data.training import cold_start
-from scipy import spatial
-from sklearn.neighbors import NearestNeighbors
-import numpy as np
 
-from utilities.metrics import ndcg_at_k, average_precision, hitrate
-from utilities.util import filter_min_k, get_top_movies, get_entity_occurrence, prune_low_occurrence, split_users
+import numpy as np
+from sklearn.neighbors import NearestNeighbors
+
+from data.training import cold_start
+from utilities.util import get_entity_occurrence, prune_low_occurrence, split_users
 
 
 def similarity(a, b):
     return np.linalg.norm(a) - np.linalg.norm(b)
-
-
-def knn(user_vectors, user, own_vector, neighbours):
-    similarities = []
-
-    for other, other_vector in user_vectors.items():
-        if other == user:
-            continue
-
-        similarities.append((other, similarity(own_vector, other_vector)))
-
-    # Shuffle s.t. any secondary ordering is random
-    shuffle(similarities)
-
-    return sorted(similarities, key=lambda x: x[1], reverse=True)[:neighbours]
 
 
 def predict_movies(idx_movie, u_r_map, neighbour_weights, top_movies=None, popularity_bias=1, exclude=None):
@@ -58,6 +41,30 @@ def get_variances(item_vectors):
         item_variances[item] = np.var(vector[np.nonzero(vector)])
 
     return item_variances
+
+
+def predict(model, idx_movie, entity_vectors, uris, neighbors=10):
+    weights = defaultdict(int)
+
+    for uri in uris:
+        vector = entity_vectors[uri]
+        distances, indices = model.kneighbors(vector.reshape(1, len(vector)), neighbors + 1)
+
+        # Get URI predictions
+        uri_predictions = {idx_movie[idx]: distance for idx, distance in zip(indices.squeeze(), distances.squeeze())}
+
+        # Remove duplicates
+        uri_predictions = list({key: value for key, value in uri_predictions.items() if key not in uris}.items())
+
+        # Sort and limit to n neighbours
+        # Should not be reverse sorted since it's by distance
+        uri_predictions = sorted(uri_predictions, key=lambda item: item[1])[:neighbors]
+
+        # Add weights
+        for target, weight in uri_predictions:
+            weights[target] += weight
+
+    return [uri for uri, rating in sorted(weights.items(), key=lambda item: item[1], reverse=False)]
 
 
 def run():
@@ -123,7 +130,8 @@ def run():
             entity_vectors[uri][idx] = rating
 
     # Print entities with highest variance, just for fun
-    # item_variances = sorted(entity_vectors.items(), key=lambda item: item[1], reverse=True)
+    item_variances = get_variances(entity_vectors)
+    json.dump(item_variances, open('variances.json', 'w'))
 
     # Get movie vectors
     movie_vectors = dict()
@@ -135,14 +143,12 @@ def run():
     model = NearestNeighbors(metric='cosine')
     model.fit(list(movie_vectors.values()))
 
-    # Predict
-    vector = entity_vectors['http://www.wikidata.org/entity/Q3772']
-    distances, indices = model.kneighbors(vector.reshape(1, len(vector)), 10)
-
-    for index in indices.squeeze():
-        uri = idx_movie[index]
-        print(f'{uri}: {entities[uri]}')
+    prediction = predict(model, idx_movie, entity_vectors, ['http://www.wikidata.org/entity/Q200092', 'http://www.wikidata.org/entity/Q157394'])[:10]
+    for pred in prediction:
+        print(entities[pred])
 
 
 if __name__ == '__main__':
+    random.seed(42)
+
     run()

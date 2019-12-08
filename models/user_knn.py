@@ -1,6 +1,11 @@
+import json
+import random
 from collections import defaultdict
 from random import sample, shuffle, choice
 import itertools
+
+import tqdm
+
 from data.training import cold_start
 from scipy import spatial
 
@@ -11,11 +16,7 @@ from utilities.util import filter_min_k, get_top_movies, get_entity_occurrence, 
 
 
 def similarity(a, b):
-    dot = np.dot(a, b)
-    norm_a = np.linalg.norm(a)
-    norm_b = np.linalg.norm(b)
-
-    return 1 - dot / (norm_a * norm_b)
+    return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
 
 
 def knn(user_vectors, user, own_vector, neighbours):
@@ -30,7 +31,7 @@ def knn(user_vectors, user, own_vector, neighbours):
     # Shuffle s.t. any secondary ordering is random
     shuffle(similarities)
 
-    return sorted(similarities, key=lambda x: x[1], reverse=False)[:neighbours]
+    return sorted(similarities, key=lambda x: x[1], reverse=True)[:neighbours]
 
 
 def predict_movies(idx_movie, u_r_map, neighbour_weights, top_movies=None, popularity_bias=1, exclude=None):
@@ -45,9 +46,8 @@ def predict_movies(idx_movie, u_r_map, neighbour_weights, top_movies=None, popul
         if not weight:
             continue
 
-        for movie, rating in u_r_map[neighbour]['movies']:
-            movie_uri = idx_movie[movie]
-            movie_weight[movie_uri] += rating
+        for movie, rating in u_r_map[neighbour]['movies'] + u_r_map[neighbour]['test']:
+            movie_weight[idx_movie[movie]] += rating * weight
 
     # Get weighted prediction and exclude excluded URIs
     predictions = sorted(list(movie_weight.items()), key=lambda x: x[1], reverse=True)
@@ -55,9 +55,9 @@ def predict_movies(idx_movie, u_r_map, neighbour_weights, top_movies=None, popul
 
 
 def run():
-    dislike = 1
-    unknown = 5
-    like = 10
+    dislike = -1
+    unknown = None
+    like = 1
 
     u_r_map, n_users, movie_idx, entity_idx = cold_start(
         from_path='../data/mindreader/user_ratings_map.json',
@@ -67,8 +67,16 @@ def run():
             1: like
         },
         restrict_entities=None,
-        split_ratio=[75, 25]
+        split_ratio=[80, 20]
     )
+
+    # Load variances
+    variances = json.load(open('../data/mindreader/variances.json'))
+
+    # Load entities
+    entities = dict()
+    for entity, name, labels in json.load(open('../data/mindreader/entities_clean.json')):
+        entities[entity] = name
 
     # Add movies to the entity_idx map
     # Just makes it easier when constructing user vectors
@@ -105,34 +113,32 @@ def run():
 
     # Static, non-personalized measure of top movies
     top_movies = get_top_movies(u_r_map, idx_movie)
-    print(top_movies[:k])
 
-    # Smoke test
-    test_vector = np.zeros(len(entity_idx))
-    test_vector[entity_idx['http://www.wikidata.org/entity/Q3772']] = 1
-
-    predictions = predict_movies(idx_movie, u_r_map, knn(user_vectors, -1, test_vector, neighbours=25))
-    print(predictions)
-
-    filtered = filter_min_k(u_r_map, 5).items()
-    neighbours = 5
-    for samples in range(1, 6):
+    filtered = filter_min_k(u_r_map, 10).items()
+    neighbours = 30
+    for samples in range(4, 6):
         subset_hits = {subset: 0 for subset in subsets}
         subset_aps = {subset: 0 for subset in subsets}
         subset_ndcg = {subset: 0 for subset in subsets}
 
         count = 0
 
-        for user, ratings in filtered:
+        for user, ratings in tqdm.tqdm(filtered):
             subset_samples = {}
             for subset, idx_lookup in subsets.items():
                 if idx_lookup:
-                    subset_samples[subset] = [(idx_lookup[idx], rating) for idx, rating in sample(ratings[subset], samples)]
+                    subset_ratings = []
 
-            all_samples = set(itertools.chain.from_iterable(subset_samples.values()))
+                    for idx, rating in ratings[subset]:
+                        uri = idx_lookup[idx]
+                        subset_ratings.append((uri, rating, variances[uri]))
+
+                    # Get top by variance
+                    subset_ratings = sorted(subset_ratings, key=lambda item: item[2], reverse=True)[:samples]
+
+                    subset_samples[subset] = [(uri, rating) for uri, rating, _ in subset_ratings]
 
             ground_truth = [idx_movie[head] for head, rating in ratings['test']]
-            ground_truth = [head for head in ground_truth if head not in all_samples]
             if not ground_truth:
                 continue
 
@@ -175,4 +181,5 @@ def run():
 
 
 if __name__ == '__main__':
+    random.seed(1)
     run()
