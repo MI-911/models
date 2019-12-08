@@ -284,8 +284,8 @@ def generate_dataset(mindreader_dir='../data/mindreader', top_n=100):
     entity_ratings = [(uid, uri, r) for uid, uri, r in all_ratings if 'Movie' not in label_map[uri]]
 
     # Take the top-N
-    top_movies = get_top_entities(movie_ratings, top_n=top_n)
-    top_entities = get_top_entities(entity_ratings, top_n=top_n)
+    top_movies = get_top_entities(movie_ratings, top_n=top_n) if top_n is not None else movie_ratings
+    top_entities = get_top_entities(entity_ratings, top_n=top_n) if top_n is not None else entity_ratings
 
     # Filter out non-top entity/movie ratings
     movie_ratings = [(uid, uri, r) for uid, uri, r in all_ratings if uri in top_movies]
@@ -357,6 +357,3 @@ def generate_dataset(mindreader_dir='../data/mindreader', top_n=100):
                    uid_idx_map, idx_uid_map,
                    m_uri_idx_map, m_idx_uri_map,
                    e_uri_idx_map, e_idx_uri_map)
-
-
-

@@ -182,6 +182,59 @@ def cold_start(from_path='../data/user_ratings_map.json', conversion_map=None, s
     return idx_u_r_map, uc, mc, ec
 
 
+
+
+
+class User:
+    def __init__(self):
+        self.likes = []
+        self.dislikes = []
+        self.test_likes = []
+        self.test_dislikes = []
+
+    def split(self):
+        l_split_idx = int(len(self.likes) * 0.75)
+        d_split_idx = int(len(self.dislikes) * 0.75)
+
+        train_likes = self.likes[:l_split_idx]
+        test_likes = self.likes[l_split_idx:]
+        train_dislikes = self.dislikes[:d_split_idx]
+        test_dislikes = self.dislikes[d_split_idx:]
+
+        self.likes = train_likes
+        self.dislikes = train_dislikes
+        self.test_likes = test_likes
+        self.test_dislikes = test_dislikes
+
+
+def load_label_propagation_warm_start():
+    with open('../data/mindreader/ratings_clean.json') as fp:
+        ratings = json.load(fp)
+
+    shuffle(ratings)
+
+    u_ratings_map = {}
+    for uid, uri, r in ratings:
+        if uid not in u_ratings_map:
+            u_ratings_map[uid] = []
+        u_ratings_map[uid].append((uri, r))
+
+    users = []
+    for u, ratings in u_ratings_map.items():
+        user = User()
+        for o, r in ratings:
+            if r == 1:
+                user.likes.append(o)
+            elif r == -1:
+                user.dislikes.append(o)
+        users.append(user)
+
+    return users
+
+
+
+
+
 if __name__ == '__main__':
     data = warm_start(
         ratings_path='../data/mindreader/ratings_clean.json',

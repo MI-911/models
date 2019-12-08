@@ -13,7 +13,7 @@ if __name__ == '__main__':
     f_names = ['1Q.json', '2Q.json', '3Q.json', '4Q.json', '5Q.json']
 
     for i, f_name in enumerate(f_names, start=1):
-        with open(f'50_epochs_top_100/{f_name}') as fp:
+        with open(f'{f_name}') as fp:
             data = json.load(fp)
 
         train_ap = data['train']
@@ -21,7 +21,7 @@ if __name__ == '__main__':
 
         plt.plot(train_ap, label='Training AP@20 at every epoch')
         plt.plot(test_ap, label='Test AP@20 at every epoch')
-        plt.title(f'AP@20 for training and testing (5 epochs, {i} questions)')
+        plt.title(f'AP@20 for training and testing (50 epochs, {i} questions)')
         plt.xlabel('Epochs')
         plt.ylabel('AP@20')
         plt.show()

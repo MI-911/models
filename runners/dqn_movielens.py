@@ -101,6 +101,7 @@ class Environment:
         # Return the state as an observation
         return self.state, reward, done
 
+
     def _calculate_reward(self, top_n=20):
         # Perform PR with the liked entities as the source nodes
         # The reward is the average precision of the top-20.

@@ -4,7 +4,8 @@ import networkx
 from itertools import combinations
 import numpy as np
 
-def load_graph(graph_path, directed=True, exclude_relations=None, restrict_nodes=None):
+
+def load_graph(graph_path, directed=True, exclude_relations=None):
     G = networkx.nx.DiGraph() if directed else networkx.nx.Graph()
 
     with open(graph_path, 'r') as graph_fp:
@@ -14,10 +15,9 @@ def load_graph(graph_path, directed=True, exclude_relations=None, restrict_nodes
             h, r, t = row['head_uri'], row['relation'], row['tail_uri']
             if exclude_relations and r in exclude_relations:
                 continue
-            if restrict_nodes and h in restrict_nodes and t in restrict_nodes:
-                G.add_node(row['head_uri'])
-                G.add_node(row['tail_uri'])
-                G.add_edge(row['head_uri'], row['tail_uri'], type=row['relation'])
+            G.add_node(row['head_uri'])
+            G.add_node(row['tail_uri'])
+            G.add_edge(row['head_uri'], row['tail_uri'], type=row['relation'])
 
     return G
 
@@ -90,7 +90,7 @@ class CollaborativeKnowledgeGraph:
 
 
 class KnowledgeGraph:
-    def __init__(self, KG, ):
+    def __init__(self, KG):
         self.KG = KG
         self.movie_uris = [
             uri

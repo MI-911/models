@@ -98,9 +98,9 @@ if __name__ == '__main__':
         ratings_path='../data/mindreader/ratings_clean.json',
         entities_path='../data/mindreader/entities_clean.json',
         conversion_map={
-            -1: 1,
+            -1: -1,
             0: None,  # Ignore don't know ratings
-            1: 5
+            1: 1
         },
         split_ratio=[75, 25]
     )
@@ -141,12 +141,12 @@ if __name__ == '__main__':
                 M[m][k] -= learning_rate * (m_gradient - regularize * U[u][k])
 
         print(f'Iteration {i}: Train RMSE: {train_rmse} (Test RMSE: {test_rmse})')
-        if i % 10 == 0:
-            acc, prec, rec = calculate_clustering_metrics(U, M[list(range(n_movies))], u_likes, u_dislikes)
-
-            accuracy_history.append(acc)
-            precision_history.append(prec)
-            recall_history.append(rec)
+        # if i % 10 == 0:
+        #     acc, prec, rec = calculate_clustering_metrics(U, M[list(range(n_movies))], u_likes, u_dislikes)
+        #
+        #     accuracy_history.append(acc)
+        #     precision_history.append(prec)
+        #     recall_history.append(rec)
 
     plt.plot(accuracy_history, color='skyblue', label='Accuracy')
     plt.plot(precision_history, color='orange', label='Precision')
