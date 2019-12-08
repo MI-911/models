@@ -27,7 +27,8 @@ def warm_start(
         ratings_path='../data/mindreader/ratings_clean.json',
         entities_path='../data/mindreader/entities_clean.json',
         conversion_map=None,
-        split_ratio=[75, 25]):
+        split_ratio=[75, 25],
+        create_uri_indices=True):
     """
     Converts UIDs and URIs to indices as returns the ratings
     in a list fashion (note different indices from movies
@@ -70,24 +71,27 @@ def warm_start(
         if uid not in u_uid_map:
             u_uid_map[uid] = uc
             uc += 1
-        if uri not in m_uri_map:
+        if uri not in m_uri_map and create_uri_indices:
             m_uri_map[uri] = mc
             mc += 1
     for uid, uri, rating in entity_ratings:
         if uid not in u_uid_map:
             u_uid_map[uid] = uc
             uc += 1
-        if uri not in e_uri_map:
+        if uri not in e_uri_map and create_uri_indices:
             e_uri_map[uri] = ec
             ec += 1
 
     _m_ratings = []
     _e_ratings = []
+
     for uid, uri, rating in movie_ratings:
-        _add_rating_w_user(_m_ratings, u_uid_map[uid], m_uri_map[uri], rating, conversion_map, is_movie=True)
+        _add_rating_w_user(_m_ratings, u_uid_map[uid], m_uri_map[uri] if create_uri_indices else uri,
+                           rating, conversion_map, is_movie=True)
 
     for uid, uri, rating in entity_ratings:
-        _add_rating_w_user(_e_ratings, u_uid_map[uid], e_uri_map[uri], rating, conversion_map, is_movie=False)
+        _add_rating_w_user(_e_ratings, u_uid_map[uid], e_uri_map[uri] if create_uri_indices else uri,
+                           rating, conversion_map, is_movie=False)
 
     movie_ratings = _m_ratings
     entity_ratings = _e_ratings
