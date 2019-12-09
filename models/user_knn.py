@@ -114,9 +114,9 @@ def run():
     # Static, non-personalized measure of top movies
     top_movies = get_top_movies(u_r_map, idx_movie)
 
-    filtered = filter_min_k(u_r_map, 10).items()
+    filtered = filter_min_k(u_r_map, 5).items()
     neighbours = 30
-    for samples in range(4, 6):
+    for samples in range(1, 6):
         subset_hits = {subset: 0 for subset in subsets}
         subset_aps = {subset: 0 for subset in subsets}
         subset_ndcg = {subset: 0 for subset in subsets}

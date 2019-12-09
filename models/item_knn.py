@@ -143,7 +143,7 @@ def run():
     model = NearestNeighbors(metric='cosine')
     model.fit(list(movie_vectors.values()))
 
-    prediction = predict(model, idx_movie, entity_vectors, ['http://www.wikidata.org/entity/Q200092', 'http://www.wikidata.org/entity/Q157394'])[:10]
+    prediction = predict(model, idx_movie, entity_vectors, ['http://www.wikidata.org/entity/Q200092'])[:10]
     for pred in prediction:
         print(entities[pred])
 
