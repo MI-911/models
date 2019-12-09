@@ -280,7 +280,7 @@ if __name__ == '__main__':
     # with open('../data/mindreader/entities.csv') as fp:
     #     entities = pd.read_csv(fp)
     # entity_map = {uri: name for uri, name in entities[['uri', 'name']].values}
-
+    #
     # # 1. Functional Matrix Factorization on MindReader data, only asks towards movies
     # train_users, test_users, n_users, n_movies, n_entities, m_idx_uri_map, e_idx_uri_map = load_fmf_users(with_entities=False)
     # # print(len(train_users))

@@ -56,15 +56,6 @@ def ratings_matrix(ratings, n_users, n_items):
     return M
 
 
-def co_occurrence_sppmi_v2(ratings_matrix):
-    n_users, n_items = ratings_matrix.shape
-    one_hot_ratings_matrix = ratings_matrix / ratings_matrix
-    co_occurrence_matrix = np.zeros((n_items, n_items))
-
-    for i in range(n_items):
-        pass
-
-
 def co_occurrence_sppmi(ratings, n_users, n_items):
     # hash(i,j) = number of users who consumed both item i and j
     # hash(i) = sum of number of users who consumed both item i and j for every j
@@ -92,17 +83,6 @@ def co_occurrence_sppmi(ratings, n_users, n_items):
                 1, np.inf)
     )
 
-    #
-    # pointwise_mutual_information = np.zeros((n_items, n_items))
-    # for i in range(n_items):
-    #     for j in range(n_items):
-    #         pointwise_mutual_information[i][j] = (
-    #                 (n_co_occurences[i][j] * n_users) /
-    #                 (n_co_occurences[i].sum() * n_co_occurences[:, j].sum())
-    #         )
-    #         print(f'{(i / n_items) * 100 : 2.2f}% ({(j / n_items) * 100 : 2.2f}%)')
-
-    # Calculate the SPPMI for some k
     k = 1
     pointwise_mutual_information = np.clip(pointwise_mutual_information - np.log(k), 0, np.inf)
     return pointwise_mutual_information
@@ -113,24 +93,6 @@ def load_data():
     # sppmi = co_occurrence_sppmi(train_ratings, n_users, n_items)
 
     return train_ratings, test_ratings, n_users, n_items
-
-
-def als_step(latent_vectors, locked_vectors, ratings, regularisation, vector_type='user'):
-    if vector_type == 'user':
-        YTY = locked_vectors.T.dot(locked_vectors)
-        lambda_i = np.eye(YTY.shape[0]) * regularisation
-
-        for u in range(latent_vectors.shape[0]):
-            latent_vectors[u, :] = solve((YTY + lambda_i), ratings[u, :].dot(locked_vectors))
-
-    elif vector_type == 'item':
-        XTX = locked_vectors.T.dot(locked_vectors)
-        lambda_i = np.eye(XTX.shape[0]) * regularisation
-
-        for i in range(latent_vectors.shape[0]):
-            latent_vectors[i, :] = solve((XTX + lambda_i), ratings[:, i].T.dot(locked_vectors))
-
-    return latent_vectors
 
 
 def update_user_vectors(user_embeddings, item_embeddings, ratings, regularisation):
@@ -166,6 +128,22 @@ def update_item_vectors_joint(item_embeddings, user_embeddings, context_embeddin
             (user_coeff_matrix + context_coeff_matrix + coeff_matrix_reg),
             ratings[:, i].T.dot(user_embeddings) + sppmi[i].dot(context_embeddings)
         )
+
+    return item_embeddings
+
+
+def update_item_vectors_joint_v2(item_embeddings, user_embeddings, context_embeddings, ratings,
+                                 sppmi_liked, sppmi_disliked, regularisation):
+    user_coeff_matrix = user_embeddings.T.dot(user_embeddings)
+    context_coeff_matrix = context_embeddings.T.dot(context_embeddings)
+    coeff_matrix_reg = np.eye(user_coeff_matrix.shape[0]) * regularisation
+
+    for i in range(item_embeddings.shape[0]):
+        coeff_matrix = (user_coeff_matrix + context_coeff_matrix + coeff_matrix_reg)
+        coeff_vectors = ratings[:, i].T.dot(user_embeddings)
+        coeff_vectors += sppmi_liked[i].dot(context_embeddings)
+        coeff_vectors += sppmi_disliked[i].dot(context_embeddings)
+        item_embeddings[i] = solve(coeff_matrix, coeff_vectors)
 
     return item_embeddings
 
