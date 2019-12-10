@@ -47,7 +47,7 @@ def predict_movies(idx_movie, u_r_map, neighbour_weights, top_movies=None, popul
             continue
 
         for movie, rating in u_r_map[neighbour]['movies'] + u_r_map[neighbour]['test']:
-            movie_weight[idx_movie[movie]] += rating * weight
+            movie_weight[idx_movie[movie]] += weight
 
     # Get weighted prediction and exclude excluded URIs
     predictions = sorted(list(movie_weight.items()), key=lambda x: x[1], reverse=True)
@@ -115,7 +115,7 @@ def run():
     top_movies = get_top_movies(u_r_map, idx_movie)
 
     filtered = filter_min_k(u_r_map, 5).items()
-    neighbours = 30
+    neighbours = 5
     for samples in range(1, 6):
         subset_hits = {subset: 0 for subset in subsets}
         subset_aps = {subset: 0 for subset in subsets}
@@ -161,7 +161,7 @@ def run():
                 # Get neighbours and make predictions
                 neighbour_weights = knn(user_vectors, user, own_vector, neighbours=neighbours)
                 predictions = predict_movies(idx_movie, u_r_map, neighbour_weights, top_movies[:k],
-                                             popularity_bias=0, exclude=[h for h, _ in sampled])
+                                             popularity_bias=1, exclude=[h for h, _ in sampled])
                 subset_predictions[subset] = predictions
 
             # Metrics
