@@ -156,19 +156,25 @@ def single_sample(test_users, idx_entity, idx_movie, model, entity_vectors):
     m_hits = 0
     e_hits = 0
     count = 0
+
+    # Go through all users in test set
     for user, ratings in tqdm(test_users):
+        # Look only on liked items
         entity_ratings = [idx_entity[head] for head, rating in ratings['entities'] if rating == 1]
         movie_ratings = [idx_movie[head] for head, rating in ratings['movies'] if rating == 1]
 
+        # Shuffle to take sample randomly
         random.shuffle(entity_ratings)
         random.shuffle(movie_ratings)
 
         entity_sample = entity_ratings[0]
         movie_sample, movie_sample_true = movie_ratings[:2]
 
+        # Get Top k predictions
         e_pred = predict(model, idx_movie, entity_vectors, [entity_sample])[:10]
         m_pred = predict(model, idx_movie, entity_vectors, [movie_sample])[:10]
 
+        # Check if sampled movie in pred
         if movie_sample_true in e_pred:
             e_hits += 1
         if movie_sample_true in m_pred:
@@ -185,7 +191,10 @@ def all_combinations(test_users, idx_entity, idx_movie, model, entity_vectors):
     e_hits = 0
     m_c = 0
     e_c = 0
+
+    # Go through all users in test set
     for user, ratings in tqdm(test_users):
+        # Look only on liked items
         entity_ratings = [idx_entity[head] for head, rating in ratings['entities'] if rating == 1]
         movie_ratings = [idx_movie[head] for head, rating in ratings['movies'] if rating == 1]
 
@@ -193,16 +202,20 @@ def all_combinations(test_users, idx_entity, idx_movie, model, entity_vectors):
         entity_samples = random.sample(entity_ratings, num_samples)
         movie_samples = random.sample(movie_ratings, num_samples)
         for sample in entity_samples:
+            # Get Top k predictions
             pred = predict(model, idx_movie, entity_vectors, [sample])[:10]
 
+            # Find how many movies are in Top k
             for m_r in movie_ratings:
                 if m_r in pred:
                     e_hits += 1
                 e_c += 1
 
         for sample in movie_samples:
+            # Get Top k predictions
             pred = predict(model, idx_movie, entity_vectors, [sample])[:10]
 
+            # Find how many movies are in Top k
             for m_r in movie_ratings:
                 if m_r != sample and m_r in pred:
                     m_hits += 1
