@@ -4,6 +4,7 @@ from collections import defaultdict
 
 import numpy as np
 from sklearn.neighbors import NearestNeighbors
+from tqdm import tqdm
 
 from data.training import cold_start
 from utilities.util import get_entity_occurrence, prune_low_occurrence, split_users
@@ -143,9 +144,75 @@ def run():
     model = NearestNeighbors(metric='cosine')
     model.fit(list(movie_vectors.values()))
 
-    prediction = predict(model, idx_movie, entity_vectors, ['http://www.wikidata.org/entity/Q35332'])[:10]
+    prediction = predict(model, idx_movie, entity_vectors, ['http://www.wikidata.org/entity/Q200092'])[:10]
     for pred in prediction:
         print(entities[pred])
+
+    #single_sample(test_users, idx_entity, idx_movie, model, entity_vectors)
+    all_combinations(test_users, idx_entity, idx_movie, model, entity_vectors)
+
+
+def single_sample(test_users, idx_entity, idx_movie, model, entity_vectors):
+    m_hits = 0
+    e_hits = 0
+    count = 0
+    for user, ratings in tqdm(test_users):
+        entity_ratings = [idx_entity[head] for head, rating in ratings['entities'] if rating == 1]
+        movie_ratings = [idx_movie[head] for head, rating in ratings['movies'] if rating == 1]
+
+        random.shuffle(entity_ratings)
+        random.shuffle(movie_ratings)
+
+        entity_sample = entity_ratings[0]
+        movie_sample, movie_sample_true = movie_ratings[:2]
+
+        e_pred = predict(model, idx_movie, entity_vectors, [entity_sample])[:10]
+        m_pred = predict(model, idx_movie, entity_vectors, [movie_sample])[:10]
+
+        if movie_sample_true in e_pred:
+            e_hits += 1
+        if movie_sample_true in m_pred:
+            m_hits += 1
+
+        count += 1
+
+    print(f'Movie hitrate: {m_hits / count}')
+    print(f'Entities hitrate {e_hits / count}')
+
+
+def all_combinations(test_users, idx_entity, idx_movie, model, entity_vectors):
+    m_hits = 0
+    e_hits = 0
+    m_c = 0
+    e_c = 0
+    for user, ratings in tqdm(test_users):
+        entity_ratings = [idx_entity[head] for head, rating in ratings['entities'] if rating == 1]
+        movie_ratings = [idx_movie[head] for head, rating in ratings['movies'] if rating == 1]
+
+        num_samples = min(len(entity_ratings), len(movie_ratings))
+        entity_samples = random.sample(entity_ratings, num_samples)
+        movie_samples = random.sample(movie_ratings, num_samples)
+        for sample in entity_samples:
+            pred = predict(model, idx_movie, entity_vectors, [sample])[:10]
+
+            for m_r in movie_ratings:
+                if m_r in pred:
+                    e_hits += 1
+                e_c += 1
+
+        for sample in movie_samples:
+            pred = predict(model, idx_movie, entity_vectors, [sample])[:10]
+
+            for m_r in movie_ratings:
+                if m_r != sample and m_r in pred:
+                    m_hits += 1
+
+                m_c += 1
+
+    print(f'Movie hitrate: {m_hits / m_c}')
+    print(f'Entities hitrate {e_hits / e_c}')
+
+
 
 
 if __name__ == '__main__':
