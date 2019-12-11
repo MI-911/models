@@ -14,26 +14,27 @@ class GNN(nn.Module):
         self.latent_dim = latent_dim
         self.batch_size = batch_size
 
-        self.user_emb = nn.Embedding(n_users, latent_dim)
-        self.relation_emb = nn.Parameter(torch.rand((n_relations, latent_dim)), requires_grad=True).expand(batch_size, n_relations, latent_dim)
-        self.entity_emb = nn.Parameter(torch.rand((n_entities, latent_dim)), requires_grad=True)
+        self.user_emb = nn.Embedding(n_users, latent_dim).cuda()
+        self.relation_emb = nn.Parameter(torch.rand((n_relations, latent_dim)), requires_grad=True).expand(batch_size, n_relations, latent_dim).cuda()
+        self.entity_emb = nn.Parameter(torch.rand((n_entities, latent_dim)), requires_grad=True).cuda()
         self.adjacency_matrix = torch.sparse.FloatTensor(indices, values, torch.Size([n_entities, n_entities])).\
-            to_dense()
+            to_dense().cuda()
         self.size = torch.Size([n_entities, n_entities])
 
         # GNN layer 0
-        self.weight_0 = nn.Parameter(torch.rand((latent_dim, latent_dim)), requires_grad=True)
-        self.gnn_last_layer_activation = nn.Tanh()
+        self.weight_0 = nn.Parameter(torch.rand((latent_dim, latent_dim)), requires_grad=True).cuda()
+        self.gnn_last_layer_activation = nn.Tanh().cuda()
 
         # Prediction
-        self.pred_activation = nn.Sigmoid()
+        self.pred_linear = nn.Linear(latent_dim, 2)
+        self.pred_activation = nn.Softmax()
 
     def forward(self, user, entity):
         u_emb = self.user_emb(user)
-        r = nn.Embedding(self.n_entities, 1, padding_idx=0)
-        b = torch.einsum('bi,bji->bj', u_emb, self.relation_emb)
+        r = nn.Embedding(self.n_entities, 1, padding_idx=0).cuda()
+        b = torch.einsum('bi,bji->bj', u_emb, self.relation_emb).cuda()
 
-        user_a_m = torch.FloatTensor(np.zeros((self.batch_size, self.n_entities, self.n_entities)))
+        user_a_m = torch.FloatTensor(np.zeros((self.batch_size, self.n_entities, self.n_entities))).cuda()
 
         for i in range(self.batch_size):
             r.weights = b[i]
@@ -47,7 +48,9 @@ class GNN(nn.Module):
         user_entity_representation = self.gnn_last_layer_activation(last_layer)
 
         # Pred
-        p = torch.einsum('bi,bi->b', u_emb, user_entity_representation)
+        p = torch.einsum('bi,bi->bi', u_emb, user_entity_representation)
+        p = self.pred_linear(p)
+        p = self.pred_activation(p)
 
         return p
 
