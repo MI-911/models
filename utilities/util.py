@@ -76,3 +76,19 @@ def split_users(all_users, train_ratio):
     split_index = int(len(all_users) * train_ratio)
 
     return all_users[:split_index], all_users[split_index:]
+
+
+def split_test(u_r_map, like, ratio=0.2):
+    for user, ratings in u_r_map.items():
+        liked_movies = [(idx, rating) for idx, rating in ratings['movies'] if rating == like]
+        shuffle(liked_movies)
+
+        split_idx = int(len(liked_movies) * ratio)
+        test = liked_movies[:split_idx]
+
+        # Set test ratings
+        ratings['test'] = test
+
+        # Remove test rating from training
+        test_indices = [idx for idx, rating in ratings['test']]
+        ratings['movies'] = [(idx, rating) for idx, rating in ratings['movies'] if idx not in test_indices]
