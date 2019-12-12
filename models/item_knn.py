@@ -68,6 +68,43 @@ def predict(model, idx_movie, entity_vectors, uris, neighbors=10):
     return [uri for uri, rating in sorted(weights.items(), key=lambda item: item[1], reverse=False)]
 
 
+def new_pred(model, idx_movies, idx_descriptive_entities, entity_vectors, item, k=10):
+    vector = entity_vectors[item]
+    continue_increase = True
+    increase_val = k*10
+    while continue_increase:
+        distances, indices = model.kneighbors(vector.reshape(1, len(vector)), k * increase_val)
+        distances, indices = distances[0], indices[0]
+
+        num_movies = len([1 for i in indices if i in idx_movies])
+        num_entities = len([1 for i in indices if i in idx_descriptive_entities])
+
+        if num_movies < k and num_entities < k:
+            increase_val += k
+        else:
+            continue_increase = False
+
+    top_m = [(d, i) for d, i in zip(distances, indices) if i in idx_movies][:k]
+    top_de = [(d, i) for d, i in zip(distances, indices) if i in idx_descriptive_entities][:k]
+
+    # TODO: include user and item biases, maybe normalise.
+    rating_m = sum([d * idx_movies[m] for d, m in top_m])
+    rating_de = sum([d * idx_descriptive_entities[de] for d, de in top_de])
+
+    return rating_m, rating_de
+
+
+def split_data(u_r_map, movies):
+    train, test = [], []
+    for user, ratings in u_r_map.items():
+        sample = random.sample(ratings['movies'], 1)[0]
+        ratings['movies'].remove(sample)
+        train.append((user, ratings))
+        test.append((user, sample))
+
+    return train, test
+
+
 def run():
     dislike = -1
     unknown = None
@@ -105,7 +142,7 @@ def run():
     u_r_map = prune_low_occurrence(u_r_map, idx_entity, idx_movie, entity_occurrence)
 
     # Split into train and test users
-    train_users, test_users = split_users(list(u_r_map.items()), train_ratio=0.75)
+    train_users, test_users = split_data(u_r_map, idx_movie)
 
     # Create indices from train users
     user_idx = {}
@@ -148,8 +185,9 @@ def run():
     for pred in prediction:
         print(entities[pred])
 
-    #single_sample(test_users, idx_entity, idx_movie, model, entity_vectors)
-    all_combinations(test_users, idx_entity, idx_movie, model, entity_vectors)
+    # single_sample(test_users, idx_entity, idx_movie, model, entity_vectors)
+    # all_combinations(test_users, idx_entity, idx_movie, model, entity_vectors)
+    simple_hitrate(train_users, test_users, idx_entity, idx_movie, model, entity_vectors, 10)
 
 
 def single_sample(test_users, idx_entity, idx_movie, model, entity_vectors):
@@ -226,6 +264,62 @@ def all_combinations(test_users, idx_entity, idx_movie, model, entity_vectors):
     print(f'Entities hitrate {e_hits / e_c}')
 
 
+def simple_hitrate(train, test, idx_entity, idx_movie, model, entity_vectors, k):
+    idx_train = {u: rs for u, rs in train}
+    movie_ids = list(idx_movie.keys())
+
+    e_hits, m_hits = 0, 0
+    count = 0
+
+    iter_num = 0
+    # Go through all users in test set
+    for user, (movie_id, rating) in test:
+        iter_num += 1
+        print(f'{iter_num}/{len(test)}')
+        a = idx_train[user]
+        user_idx_movie = {u: r for u, r in idx_train[user]['movies']}
+        user_idx_entity = {u: r for u, r in idx_train[user]['entities']}
+
+        # Only use users with at least k movie and entity ratings.
+        if len(user_idx_movie) < k or len(user_idx_entity) < k:
+            continue
+
+        # Sample 1000 movies + test uri.
+        random.shuffle(movie_ids)
+        samples = list(filter(lambda x: (x not in user_idx_movie) and x != movie_id, movie_ids))[:500]
+        samples.append(movie_id)
+        sample_len = len(samples)
+
+        # Find rating for all sampled movies
+        movie_ratings = []
+        entity_ratings = []
+        for i, sample in tqdm(enumerate(samples), total=sample_len, desc='inner', position=0):
+            sample_uri = idx_movie[sample] if sample in idx_movie else idx_entity[sample]
+            movie_rating, entity_rating = new_pred(model, user_idx_movie, user_idx_entity, entity_vectors, sample_uri, k)
+
+            movie_ratings.append((i, movie_rating))
+            entity_ratings.append((i, entity_rating))
+
+        # Sort movies and take top k
+        movie_ratings = sorted(movie_ratings, key=lambda x: x[1], reverse=True)[:k]
+        entity_ratings = sorted(entity_ratings, key=lambda x: x[1], reverse=True)[:k]
+
+        # Check if test movie in top k of movie and entity ratings
+        for i, _ in movie_ratings:
+            if i == sample_len-1:
+                m_hits += 1
+
+        for i, _ in entity_ratings:
+            if i == sample_len-1:
+                e_hits += 1
+
+        count += 1
+
+        print(f'Movie hitrate: {m_hits / count}')
+        print(f'Entities hitrate {e_hits / count}')
+
+    print(f'Movie hitrate: {m_hits / count}')
+    print(f'Entities hitrate {e_hits / count}')
 
 
 if __name__ == '__main__':
