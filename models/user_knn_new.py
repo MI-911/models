@@ -40,7 +40,7 @@ def _predict(idx_movie, u_r_map, neighbour_weights, exclude=None):
 
 def user_to_vector(ratings, entity_idx, idx_movie):
     vector = np.zeros(len(entity_idx))
-    movie_ratings = [(entity_idx[idx_movie[head]], rating) for head, rating in ratings['movies'] + ratings['test']]
+    movie_ratings = [(entity_idx[idx_movie[head]], rating) for head, rating in ratings['movies']]
 
     for idx, rating in ratings['entities'] + movie_ratings:
         vector[idx] = rating
@@ -51,7 +51,7 @@ def user_to_vector(ratings, entity_idx, idx_movie):
 def run():
     random.seed(42)
 
-    dislike = -1
+    dislike = 1
     unknown = None
     like = 1
 
@@ -106,7 +106,7 @@ def run():
     keys = list(user_vectors.keys())
 
     # kNN model
-    model = NearestNeighbors()
+    model = NearestNeighbors(metric='cosine')
     model.fit(list(user_vectors.values()))
 
     # Smoke test

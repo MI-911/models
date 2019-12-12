@@ -47,7 +47,7 @@ def predict_movies(idx_movie, u_r_map, neighbour_weights, top_movies=None, popul
             continue
 
         for movie, rating in u_r_map[neighbour]['movies'] + u_r_map[neighbour]['test']:
-            movie_weight[idx_movie[movie]] += weight
+            movie_weight[idx_movie[movie]] += 1
 
     # Get weighted prediction and exclude excluded URIs
     predictions = sorted(list(movie_weight.items()), key=lambda x: x[1], reverse=True)
@@ -55,7 +55,7 @@ def predict_movies(idx_movie, u_r_map, neighbour_weights, top_movies=None, popul
 
 
 def run():
-    dislike = -1
+    dislike = 1
     unknown = None
     like = 1
 
@@ -114,9 +114,9 @@ def run():
     # Static, non-personalized measure of top movies
     top_movies = get_top_movies(u_r_map, idx_movie)
 
-    filtered = filter_min_k(u_r_map, 5).items()
-    neighbours = 5
-    for samples in range(1, 6):
+    filtered = filter_min_k(u_r_map, 20).items()
+    neighbours = 30
+    for samples in range(20, 21):
         subset_hits = {subset: 0 for subset in subsets}
         subset_aps = {subset: 0 for subset in subsets}
         subset_ndcg = {subset: 0 for subset in subsets}
@@ -127,16 +127,7 @@ def run():
             subset_samples = {}
             for subset, idx_lookup in subsets.items():
                 if idx_lookup:
-                    subset_ratings = []
-
-                    for idx, rating in ratings[subset]:
-                        uri = idx_lookup[idx]
-                        subset_ratings.append((uri, rating, variances[uri]))
-
-                    # Get top by variance
-                    subset_ratings = sorted(subset_ratings, key=lambda item: item[2], reverse=True)[:samples]
-
-                    subset_samples[subset] = [(uri, rating) for uri, rating, _ in subset_ratings]
+                    subset_samples[subset] = [(idx_entity[idx], rating) for idx, rating in sample(ratings[subset], samples)]
 
             ground_truth = [idx_movie[head] for head, rating in ratings['test']]
             if not ground_truth:
@@ -181,5 +172,5 @@ def run():
 
 
 if __name__ == '__main__':
-    random.seed(1)
+    random.seed(2)
     run()
