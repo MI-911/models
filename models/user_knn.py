@@ -1,17 +1,12 @@
 import json
 import random
 from collections import defaultdict
-from random import sample, shuffle, choice
-import itertools
-
-import tqdm
+from random import shuffle, choice
+from scipy import sparse
+import numpy as np
+from sklearn.metrics.pairwise import cosine_similarity
 
 from data.training import cold_start
-from scipy import spatial
-
-import numpy as np
-
-from utilities.metrics import ndcg_at_k, average_precision, hitrate
 from utilities.util import filter_min_k, get_top_movies, get_entity_occurrence, prune_low_occurrence
 
 
@@ -19,19 +14,27 @@ def similarity(a, b):
     return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
 
 
-def knn(user_vectors, user, own_vector, neighbours):
-    similarities = []
+def knn(user_vectors, k):
+    idx_user = {}
+    vectors = []
+    for idx, user in enumerate(user_vectors.keys()):
+        idx_user[idx] = user
+        vectors.append(user_vectors[user])
 
-    for other, other_vector in user_vectors.items():
-        if other == user:
-            continue
+    similarities = cosine_similarity(sparse.csr_matrix(np.array(vectors)))
 
-        similarities.append((other, similarity(own_vector, other_vector)))
+    all_similarities = dict()
 
-    # Shuffle s.t. any secondary ordering is random
-    shuffle(similarities)
+    # For each user, get the top k nearest neighbours
+    for idx in idx_user.keys():
+        # Get the users that are nearest to us (skip the first element, that's us)
+        similarity_values = np.delete(similarities[idx], idx)
 
-    return sorted(similarities, key=lambda x: x[1], reverse=True)[:neighbours]
+        sorted_args = np.argsort(similarity_values)[::-1]
+
+        all_similarities[idx_user[idx]] = [(idx_user[idx], similarity_values[idx]) for idx in sorted_args[:k]]
+
+    return all_similarities
 
 
 def predict_movies(idx_movie, u_r_map, neighbour_weights, top_movies=None, popularity_bias=1, exclude=None):
@@ -46,7 +49,7 @@ def predict_movies(idx_movie, u_r_map, neighbour_weights, top_movies=None, popul
         if not weight:
             continue
 
-        for movie, rating in u_r_map[neighbour]['movies'] + u_r_map[neighbour]['test']:
+        for movie, rating in u_r_map[neighbour]['movies']:
             movie_weight[idx_movie[movie]] += 1
 
     # Get weighted prediction and exclude excluded URIs
@@ -67,11 +70,8 @@ def run():
             1: like
         },
         restrict_entities=None,
-        split_ratio=[80, 20]
+        split_ratio=[100, 0]
     )
-
-    # Load variances
-    variances = json.load(open('../data/mindreader/variances.json'))
 
     # Load entities
     entities = dict()
@@ -92,11 +92,19 @@ def run():
     # Filter entities with only one occurrence
     entity_occurrence = get_entity_occurrence(u_r_map, idx_entity, idx_movie)
     u_r_map = prune_low_occurrence(u_r_map, idx_entity, idx_movie, entity_occurrence)
+    filtered = filter_min_k(u_r_map, 1).items()
+
+    # Take one test item from each user
+    for user, ratings in filtered:
+        test_head = choice(ratings['movies'])[0]
+
+        ratings['test'] = idx_movie[test_head]
+        ratings['movies'] = [(head, rating) for head, rating in ratings['movies'] if head != test_head]
 
     # Construct user vectors
     user_vectors = {}
     subsets = {'movies': idx_movie, 'entities': idx_entity, 'popular': None}
-    for user, ratings in u_r_map.items():
+    for user, ratings in filtered:
         user_vectors[user] = np.zeros(len(entity_idx))
 
         for subset, idx_lookup in subsets.items():
@@ -114,63 +122,29 @@ def run():
     # Static, non-personalized measure of top movies
     top_movies = get_top_movies(u_r_map, idx_movie)
 
-    filtered = filter_min_k(u_r_map, 20).items()
-    neighbours = 30
-    for samples in range(20, 21):
-        subset_hits = {subset: 0 for subset in subsets}
-        subset_aps = {subset: 0 for subset in subsets}
-        subset_ndcg = {subset: 0 for subset in subsets}
+    count = 0
+    hits = 0
+    pop_hits = 0
 
-        count = 0
+    neighbours = 100
 
-        for user, ratings in tqdm.tqdm(filtered):
-            subset_samples = {}
-            for subset, idx_lookup in subsets.items():
-                if idx_lookup:
-                    subset_samples[subset] = [(idx_entity[idx], rating) for idx, rating in sample(ratings[subset], samples)]
+    weights = knn(user_vectors, neighbours)
+    for user, ratings in filtered:
+        predictions = predict_movies(idx_movie, u_r_map, weights[user], top_movies=top_movies, popularity_bias=1,
+                                     exclude=None)[:k]
 
-            ground_truth = [idx_movie[head] for head, rating in ratings['test']]
-            if not ground_truth:
-                continue
+        if ratings['test'] in predictions:
+            hits += 1
 
-            left_out = choice(ground_truth)
+        if ratings['test'] in top_movies[:k]:
+            pop_hits += 1
 
-            # Try both subsets
-            subset_predictions = dict()
-            for subset, idx_lookup in subsets.items():
-                if subset == 'popular':
-                    subset_predictions[subset] = top_movies
+        count += 1
 
-                    continue
-
-                sampled = subset_samples[subset]
-
-                own_vector = np.zeros(len(entity_idx))
-                for uri, rating in sampled:
-                    own_vector[entity_idx[uri]] = rating
-
-                # Get neighbours and make predictions
-                neighbour_weights = knn(user_vectors, user, own_vector, neighbours=neighbours)
-                predictions = predict_movies(idx_movie, u_r_map, neighbour_weights, top_movies[:k],
-                                             popularity_bias=1, exclude=[h for h, _ in sampled])
-                subset_predictions[subset] = predictions
-
-            # Metrics
-            for subset, predictions in subset_predictions.items():
-                subset_aps[subset] += average_precision(ground_truth, predictions, k=k)
-                subset_hits[subset] += hitrate(left_out, predictions, k=k)
-                subset_ndcg[subset] += ndcg_at_k(ground_truth, predictions, k=k)
-
-            count += 1
-
-        print(f'{samples} samples, {neighbours} neighbours:')
-        for subset in subsets:
-            print(f'{subset.title()} MAP: {subset_aps[subset] / count * 100}%')
-            print(f'{subset.title()} hit-rate: {subset_hits[subset] / count * 100}%')
-            print(f'{subset.title()} NDCG: {subset_ndcg[subset] / count * 100}%')
-            print()
+    print(f'UserKNN Hits: {hits / count * 100}%')
+    print(f'TopPop Hits: {pop_hits / count * 100}%')
 
 
 if __name__ == '__main__':
-    random.seed(2)
+    random.seed(4)
     run()
