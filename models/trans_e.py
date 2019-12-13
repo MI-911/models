@@ -94,6 +94,17 @@ class TransE(nn.Module):
 
         return (rank_h + rank_t + 2) / 2
 
+    def predict_movies_for_user(self, u_idx, relation_idx, movie_indices):
+        u_idx, relation_idx, movie_indices = self.params_to(u_idx, relation_idx, movie_indices, self.device)
+        prediction_vector = self.entity_embeddings(u_idx) + self.relation_embeddings(relation_idx)
+
+        # Calculate similarity to all movie embeddings
+        movie_embeddings = self.entity_embeddings(movie_indices)
+        similarities = movie_embeddings @ prediction_vector
+
+        return zip(movie_indices, similarities)
+
+
 
 
 if __name__ == '__main__':
