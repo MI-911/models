@@ -10,9 +10,6 @@ from data.training import cold_start
 from utilities.util import filter_min_k, get_top_movies, get_entity_occurrence, prune_low_occurrence
 
 
-def similarity(a, b):
-    return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
-
 
 def knn(user_vectors, k):
     idx_user = {}
@@ -37,20 +34,12 @@ def knn(user_vectors, k):
     return all_similarities
 
 
-def predict_movies(idx_movie, u_r_map, neighbour_weights, top_movies=None, popularity_bias=1, exclude=None):
+def predict_movies(idx_movie, u_r_map, neighbour_weights, exclude=None):
     movie_weight = defaultdict(int)
 
-    # Add popularity bias
-    if top_movies:
-        for movie in top_movies:
-            movie_weight[movie] += popularity_bias
-
     for neighbour, weight in neighbour_weights:
-        if not weight:
-            continue
-
         for movie, rating in u_r_map[neighbour]['movies']:
-            movie_weight[idx_movie[movie]] += 1
+            movie_weight[idx_movie[movie]] += rating
 
     # Get weighted prediction and exclude excluded URIs
     predictions = sorted(list(movie_weight.items()), key=lambda x: x[1], reverse=True)
@@ -58,7 +47,7 @@ def predict_movies(idx_movie, u_r_map, neighbour_weights, top_movies=None, popul
 
 
 def run():
-    dislike = 1
+    dislike = None
     unknown = None
     like = 1
 
@@ -91,8 +80,8 @@ def run():
 
     # Filter entities with only one occurrence
     entity_occurrence = get_entity_occurrence(u_r_map, idx_entity, idx_movie)
-    u_r_map = prune_low_occurrence(u_r_map, idx_entity, idx_movie, entity_occurrence)
-    filtered = filter_min_k(u_r_map, 1).items()
+    u_r_map = prune_low_occurrence(u_r_map, idx_entity, idx_movie, entity_occurrence, keep=4)
+    filtered = filter_min_k(u_r_map, 10).items()
 
     # Take one test item from each user
     for user, ratings in filtered:
@@ -122,27 +111,28 @@ def run():
     # Static, non-personalized measure of top movies
     top_movies = get_top_movies(u_r_map, idx_movie)
 
-    count = 0
-    hits = 0
-    pop_hits = 0
+    for neighbours in [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 150, 200, 250, 300, 400, 500, 600, 700, 800]:
+        print(f'{neighbours=}')
 
-    neighbours = 100
+        count = 0
+        hits = 0
+        pop_hits = 0
 
-    weights = knn(user_vectors, neighbours)
-    for user, ratings in filtered:
-        predictions = predict_movies(idx_movie, u_r_map, weights[user], top_movies=top_movies, popularity_bias=1,
-                                     exclude=None)[:k]
+        weights = knn(user_vectors, neighbours)
+        for user, ratings in filtered:
+            own = [head for head, rating in ratings['movies']]
+            predictions = predict_movies(idx_movie, u_r_map, weights[user], exclude=own)
 
-        if ratings['test'] in predictions:
-            hits += 1
+            if ratings['test'] in predictions[:k]:
+                hits += 1
 
-        if ratings['test'] in top_movies[:k]:
-            pop_hits += 1
+            if ratings['test'] in top_movies[:k]:
+                pop_hits += 1
 
-        count += 1
+            count += 1
 
-    print(f'UserKNN Hits: {hits / count * 100}%')
-    print(f'TopPop Hits: {pop_hits / count * 100}%')
+        print(f'UserKNN Hits: {hits / count * 100}%')
+        print(f'TopPop Hits: {pop_hits / count * 100}%')
 
 
 if __name__ == '__main__':
